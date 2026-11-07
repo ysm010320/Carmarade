@@ -45,6 +45,8 @@ private data class BubbleStyle(val fill: Int, val stroke: Int, val ink: Int)
 private val REST_STYLE=BubbleStyle(Color.rgb(250,238,218),Color.rgb(239,159,39),Color.rgb(99,56,6))
 private val OK_STYLE=BubbleStyle(Color.rgb(230,241,251),Color.rgb(133,183,235),Color.rgb(12,68,124))
 private val DISTANCE_STYLE=BubbleStyle(Color.rgb(225,245,238),Color.rgb(93,202,165),Color.rgb(8,80,65))
+private const val REST_LABEL="모두에게 잠깐 쉬어가요"
+private const val OK_LABEL="모두에게 잘 따라가고 있어요"
 private val TEXT_STYLE=BubbleStyle(Color.WHITE,Color.rgb(196,206,192),Palette.ink)
 
 /** 주행 체험 전체 화면 지도. 실제 길 안내가 아닌 개념도. */
@@ -117,6 +119,9 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     private val bubbles=mutableMapOf<String,Shown>()
     private var seq=0L
     private val soundButton: ImageView
+    private lateinit var restButton: ImageView
+    private lateinit var okButton: ImageView
+    private val okOff=Runnable { setActive(okButton,false,OK_LABEL) }
     private var menu: PopupWindow?=null
     private val density=resources.displayMetrics.density
 
@@ -126,8 +131,13 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         addView(ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted),
             LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18) })
         val quick=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
-        quick.addView(icon(R.drawable.ic_coffee,"모두에게 잠깐 쉬어가요") { host.quick(REST_TEXT,"all") })
-        quick.addView(space());quick.addView(icon(R.drawable.ic_thumb_up,"모두에게 잘 따라가고 있어요") { host.quick(OK_TEXT,"all") })
+        // 모두에게 보내는 빠른 메시지는 말풍선 대신 버튼 색으로 보냈음을 표시함.
+        restButton=icon(R.drawable.ic_coffee,REST_LABEL) { host.quick(REST_TEXT,"all");setActive(restButton,true,REST_LABEL) }
+        okButton=icon(R.drawable.ic_thumb_up,OK_LABEL) {
+            host.quick(OK_TEXT,"all");setActive(okButton,true,OK_LABEL)
+            removeCallbacks(okOff);postDelayed(okOff,10_000)
+        }
+        quick.addView(restButton);quick.addView(space());quick.addView(okButton)
         addView(quick,LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply { setMargins(ui.d(16),ui.d(16),0,0) })
         val side=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
         side.addView(icon(R.drawable.ic_pin,"위치공유 설정") { host.openPrivacy() })
@@ -206,7 +216,16 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         put(memberId,bubble(null,R.drawable.ic_flag,label,DISTANCE_STYLE,if(label==ARRIVING_LABEL) "곧 도착" else "$label 남음"),null)
     }
     /** 정차하면 그 사람이 보낸 쉬어가요 말풍선을 닫음. */
-    fun clearRest(ownerId: String) { bubbles.filterValues { it.restOwner==ownerId }.keys.toList().forEach { remove(it,null) } }
+    fun clearRest(ownerId: String) {
+        bubbles.filterValues { it.restOwner==ownerId }.keys.toList().forEach { remove(it,null) }
+        if(ownerId=="me") setActive(restButton,false,REST_LABEL)
+    }
+    /** 쉬어가요 버튼은 내 차가 정차할 때까지, 따봉 버튼은 10초 동안 켜진 색으로 둠. */
+    private fun setActive(b: ImageView, on: Boolean, label: String) {
+        b.background=ui.box(if(on) Palette.teal else Palette.white,16,true)
+        b.setColorFilter(if(on) Palette.white else Palette.teal)
+        b.isSelected=on;b.contentDescription=if(on) "$label · 보냄" else label
+    }
 
     private fun bubble(prefix: String?, iconRes: Int?, label: String?, style: BubbleStyle, spoken: String): View {
         val bg=BubbleBackground(style.fill,style.stroke,density)

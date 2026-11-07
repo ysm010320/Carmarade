@@ -7,7 +7,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import android.speech.RecognizerIntent
-import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.*
@@ -31,8 +30,10 @@ class MainActivity : Activity() {
     private var draftType=100
     private var draftDestination=Catalog.places.first()
     private val reviewDrafts=mutableMapOf<String,String>()
-    private var tts: TextToSpeech?=null
-    private var speechReady=false
+    // 음성 읽어주기(Pleos TTS 우선, 안 되면 Android TTS)와 주행 중 제한 상태.
+    private var speech: SpeechOut?=null
+    private var drivingState: DrivingState?=null
+    private var moving=false
     private var sound=false
     private lateinit var content: LinearLayout
     // 같은 화면을 다시 그릴 때 스크롤 위치를 유지하기 위해 기억해 둠(버튼을 누를 때마다 맨 위로 튀지 않게).
@@ -54,7 +55,7 @@ class MainActivity : Activity() {
         override fun call(recipient: String)=toast("통화 기능은 준비 중이에요.")
         override fun openPrivacy()=navigate("privacy")
         override fun toggleSound() {
-            if(!speechReady) toast("이 기기에 한국어 음성 엔진이 설치되어 있지 않아요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
+            if(speech?.ready!=true) toast("음성 엔진을 준비하고 있어요. 잠시 후 다시 눌러 주세요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
         }
         override fun finishTrip()=confirmFinish()
         override fun showHistory()=history()
@@ -68,21 +69,19 @@ class MainActivity : Activity() {
         selectedId=savedInstanceState?.getString("selected") ?: trips.firstOrNull()?.id.orEmpty()
         screen=savedInstanceState?.getString("screen") ?: "home"
         trips.find { it.phase==Phase.DRIVING }?.let { selectedId=it.id;screen="drive" }
-        tts=TextToSpeech(this) { status ->
-            if(status==TextToSpeech.SUCCESS) {
-                val result=tts?.setLanguage(Locale.KOREAN)
-                speechReady=result!=TextToSpeech.LANG_MISSING_DATA && result!=TextToSpeech.LANG_NOT_SUPPORTED
-            }
-        }
+        speech=SpeechOut(this) { }
+        // 차가 움직이면(주행 최적화 필요) 주행 화면·위치공유 설정만 보여 줌.
+        drivingState=DrivingState.attach(this) { m -> moving=m;render() }
+        moving=drivingState?.restricted ?: false
         render()
     }
     override fun onSaveInstanceState(out: Bundle) { out.putString("selected",selectedId);out.putString("screen",screen);super.onSaveInstanceState(out) }
     override fun onConfigurationChanged(config: Configuration) { super.onConfigurationChanged(config);render() }
-    override fun onDestroy() { ticker.removeCallbacks(tick);tts?.stop();tts?.shutdown();gateway.close();super.onDestroy() }
+    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();drivingState?.release();gateway.close();super.onDestroy() }
     @Deprecated("Legacy Android activity back handling")
     override fun onBackPressed() { if(driving) navigate("drive") else if(screen!="home") navigate("home") else super.onBackPressed() }
     private fun toast(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
-    private fun say(message: String) { if(sound && speechReady) tts?.speak(message,TextToSpeech.QUEUE_ADD,null,"camarade") }
+    private fun say(message: String) { if(sound) speech?.say(message) }
     private fun update(next: Trip, after: String?=null): Boolean {
         val result=persistLive(trips,next,store::save)
         trips=result.trips;saveError=result.error
@@ -155,12 +154,19 @@ class MainActivity : Activity() {
             warning.addView(ui.button("저장 다시 시도") { action { store.save(trips);saveError=null;render();toast("변경 내용을 저장했어요.") } })
             content.addView(warning);content.addView(ui.gap(18))
         }
-        when(screen) { "home"->home();"trip"->planner();"privacy"->privacy();"records"->records();"record"->record();"create"->create();else->home() }
+        if(moving && screen!="privacy") parkedOnly()
+        else when(screen) { "home"->home();"trip"->planner();"privacy"->privacy();"records"->records();"record"->record();"create"->create();else->home() }
         shownScreen=screen;scrollView=scroll
         // 첫 프레임을 그리기 전에 위치를 되돌려 맨 위가 잠깐 보이는 깜빡임을 막음. 내용이 짧아졌으면 ScrollView가 끝에 맞춰 줌.
         if(keepY>0) scroll.viewTreeObserver.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean { scroll.viewTreeObserver.removeOnPreDrawListener(this);scroll.scrollTo(0,keepY);return true }
         })
+    }
+    /** 차가 움직이는 동안 입력·설정 화면 대신 보여 줌. Pleos는 주행 중 설정(NO_SETUP)을 제한함. */
+    private fun parkedOnly() {
+        title("DRIVE SAFELY","주행 중에는 운전에 집중해요","모임 만들기·경로 설정·후기 작성은 정차한 뒤에 할 수 있어요.")
+        if(driving) { content.addView(ui.button("주행 화면으로 돌아가기",true) { navigate("drive") });content.addView(ui.gap(12)) }
+        content.addView(ui.button("위치공유 설정") { navigate("privacy") })
     }
     private fun home() {
         title("OUR NEXT JOURNEY","오늘은, 어디로 함께 갈까요?","각자의 차에서 시작해도, 우리의 이야기는 함께.")
@@ -319,7 +325,8 @@ class MainActivity : Activity() {
         action { current?.let { t->
             val now=System.currentTimeMillis()
             update(t.send("me",recipient,text,now,mode))
-            driveView?.showMessage("me",recipient,text)
+            // 모두에게 보낸 쉬어가요·따봉은 왼쪽 위 버튼 색으로 표시하므로 말풍선을 띄우지 않음.
+            if(recipient!="all" || quickKind(text)==QuickKind.TEXT) driveView?.showMessage("me",recipient,text)
             if(quickKind(text)==QuickKind.REST) sim?.stopSoon("me",now)
         } }
     }

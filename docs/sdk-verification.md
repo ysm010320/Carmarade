@@ -132,4 +132,5 @@ Pleos Connect v2.1.0 에뮬레이터(API 34, x86_64, Automotive, RAM 4GB, WHPX �
 
 1. STT 인식 결과: Windows 기본 입력 장치를 실제 마이크로 맞추고, 에뮬레이터 Extended controls → Microphone에서 호스트 입력을 켠 뒤 다시 시험(점검 화면 로그의 RMS가 오르는지 먼저 확인).
 2. 도착 이벤트: 실차 또는 내비 모의주행 기능이 생기면 확인.
-3. 메인 앱의 `distractionOptimized` 적용 여부 결정 후 주행 중 화면 확인.
+3. ~~메인 앱의 `distractionOptimized` 적용 여부 결정 후 주행 중 화면 확인.~~ 2026-11-08 적용함. D단 56km/h에서 주행 화면이 계속 보이고, 주행 중에는 앱이 직접 주행 화면·위치공유 설정만 열어 줍니다(CarUxRestrictions의 주행 최적화 필요 상태 기준). P로 바꾸면 다른 화면이 다시 열립니다.
+4. 음성 읽어주기를 Pleos TTS(ON_DEVICE)로 바꿈. 에뮬레이터 로그에서 화자 seoyoon으로 발화 후 onDone까지 확인. Pleos 초기화가 실패하면 Android TTS로 바꿉니다.
