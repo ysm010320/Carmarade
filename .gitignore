@@ -1,0 +1,15 @@
+.gradle/
+**/build/
+local.properties
+.toolchain/
+*.jks
+*.keystore
+.DS_Store
+*.apk.idsig
+carmarade-source.zip
+.idea/
+.kotlin/
+.cxx/
+.env
+.env.*
+!.env.example
