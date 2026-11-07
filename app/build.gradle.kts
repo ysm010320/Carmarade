@@ -2,6 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "ai.camarade.app"
     compileSdk = 34
+    useLibrary("android.car") // CarUxRestrictions(주행 중 제한) 확인용. 차량 기기에만 있음.
     defaultConfig {
         applicationId = "ai.camarade.app.demo"
         minSdk = 28
