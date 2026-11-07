@@ -50,6 +50,8 @@ class DriveSimulation(trip: Trip, now: Long) {
     fun isStopped(id: String)=cars.find { it.id==id }?.stoppedSince!=null
     /** 쉬어가요를 보낸 차는 잠시 뒤 휴게소에 정차했다가 다시 출발한다(체험용). */
     fun stopSoon(id: String, now: Long) { cars.find { it.id==id }?.let { if(it.stoppedSince==null && it.stopAt==null) it.stopAt=now+STOP_DELAY_MS } }
+    /** 쉬어가기를 취소하면 예정된 정차도 취소(이미 정차 중이면 그대로 둠). */
+    fun cancelStop(id: String) { cars.find { it.id==id }?.stopAt=null }
     fun tick(now: Long): List<SimEvent> {
         val out=mutableListOf<SimEvent>()
         cars.forEach { c ->
