@@ -28,12 +28,12 @@
 - `scripts/test-core.sh`: 도메인 테스트 14개 통과. Linux, OpenJDK 21, Gradle 8.14.3에 들어 있는 Kotlin 2.0.21 사용.
   `CAMARADE_GRADLE_LIB=/opt/gradle/lib CAMARADE_JAVA=/usr/bin/java bash scripts/test-core.sh`
 - `preview/index.html`: 브라우저(Chromium)에서 오류 없이 로드됨.
-- Android 빌드: 실행하지 못함(이 환경에 Android SDK가 없고 다운로드도 막혀 있음). README대로 Gradle 전체 빌드·lint·에뮬레이터 실행은 팀 안에서도 아직 검증되지 않았습니다.
+- Android Gradle 빌드 성공, lint 오류 0개(경고 9개). 에뮬레이터 실행은 아직 못 함. 자세한 내용은 `docs/sdk-verification.md`.
 
 ## 인수인계 문서와 달라진 점 (팀원 조사 `docs/contest-and-sdk.md`)
 
 - NaviHelper 경유지 최대 2개는 공식 문서(waypoint-settings)로 확인됨. 인수인계 문서에서는 "이름 기준 추정"이었음.
-- **SDK 신청 가이드에 Vehicle State·NaviHelper만 사용 가능, 위치·음성·차량 제어는 "준비 중"으로 표기되어 있다고 함.** 사실이면 FusedLocation·STT/TTS·앰비언트 라이트를 전제로 한 기획은 위험합니다. Pleos 프로젝트를 만들어 실제 사용 가능 상태를 먼저 확인해야 합니다.
+- **공식 문서로 확인함: Vehicle State·NaviHelper만 사용 가능하고, FusedLocation·STT·TTS·Vehicle Control은 "준비 중"입니다.** 위치·음성·앰비언트 라이트를 전제로 한 기획은 위험합니다(`docs/sdk-verification.md`).
 - 공모전 평가 기준: 차량특화성·창의성·기술 활용성·사업성. 기획서(접수양식)가 필수이고, 시연 영상 또는 GitHub(소스+APK)은 선택 가산점이며, 2차 PT 전에 실제로 동작하는 앱이 필요합니다.
 
 ## 그 밖에 발견한 것
