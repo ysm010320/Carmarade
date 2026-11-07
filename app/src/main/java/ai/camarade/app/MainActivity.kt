@@ -35,6 +35,9 @@ class MainActivity : Activity() {
     private var speechReady=false
     private var sound=false
     private lateinit var content: LinearLayout
+    // 같은 화면을 다시 그릴 때 스크롤 위치를 유지하기 위해 기억해 둠(버튼을 누를 때마다 맨 위로 튀지 않게).
+    private var scrollView: ScrollView?=null
+    private var shownScreen=""
     private val current: Trip? get()=trips.find { it.id==selectedId }
     private val driving: Boolean get()=trips.any { it.phase==Phase.DRIVING }
     private var voiceTripId: String?=null
@@ -95,6 +98,7 @@ class MainActivity : Activity() {
     private fun note(label: String) { content.addView(ui.gap(10));content.addView(ui.text(label,12f,Palette.muted));content.addView(ui.gap(10)) }
     private fun map(t: Trip,height: Int=265): View = RouteMapView(this,t,gateway).apply { layoutParams=LinearLayout.LayoutParams(-1,ui.d(height));clipToOutline=true;background=ui.box(Palette.soft,20) }
     private fun render() {
+        val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
         val wide=resources.configuration.screenWidthDp>=720
         val root=ui.col();root.setBackgroundColor(Palette.bg)
         val top=ui.row().apply { setPadding(ui.d(24),ui.d(14),ui.d(24),ui.d(14)) }
@@ -126,6 +130,11 @@ class MainActivity : Activity() {
             content.addView(warning);content.addView(ui.gap(18))
         }
         when(screen) { "home"->home();"trip"->planner();"drive"->drive();"privacy"->privacy();"records"->records();"record"->record();"create"->create();else->home() }
+        shownScreen=screen;scrollView=scroll
+        // 첫 프레임을 그리기 전에 위치를 되돌려 맨 위가 잠깐 보이는 깜빡임을 막음. 내용이 짧아졌으면 ScrollView가 끝에 맞춰 줌.
+        if(keepY>0) scroll.viewTreeObserver.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean { scroll.viewTreeObserver.removeOnPreDrawListener(this);scroll.scrollTo(0,keepY);return true }
+        })
     }
     private fun home() {
         title("OUR NEXT JOURNEY","오늘은, 어디로 함께 갈까요?","각자의 차에서 시작해도, 우리의 이야기는 함께.")
