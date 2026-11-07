@@ -59,6 +59,7 @@ class MainActivity : Activity() {
         }
         override fun finishTrip()=confirmFinish()
         override fun showHistory()=history()
+        override fun cancelRest() { sim?.cancelStop("me") }
         override fun remainingKm(memberId: String)=sim?.remainingKm(memberId,System.currentTimeMillis())
         override fun progress(memberId: String)=sim?.progress(memberId,System.currentTimeMillis())
     }

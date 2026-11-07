@@ -105,6 +105,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         fun toggleSound()
         fun finishTrip()
         fun showHistory()
+        /** 쉬어가요 버튼을 다시 눌러 끔. 예정된 정차를 취소한다. */
+        fun cancelRest()
         fun remainingKm(memberId: String): Double?
         fun progress(memberId: String): Double?
     }
@@ -122,6 +124,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     private lateinit var restButton: ImageView
     private lateinit var okButton: ImageView
     private val okOff=Runnable { setActive(okButton,false,OK_LABEL) }
+    private val restOn: Boolean get()=restButton.isSelected
+    private val random=java.util.Random()
     private var menu: PopupWindow?=null
     private val density=resources.displayMetrics.density
 
@@ -131,11 +135,17 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         addView(ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted),
             LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18) })
         val quick=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
-        // 모두에게 보내는 빠른 메시지는 말풍선 대신 버튼 색으로 보냈음을 표시함.
-        restButton=icon(R.drawable.ic_coffee,REST_LABEL) { host.quick(REST_TEXT,"all");setActive(restButton,true,REST_LABEL) }
+        // 모두에게 보내는 빠른 메시지는 말풍선 대신 버튼으로 보냈음을 표시함.
+        // 쉬어가요: 누르면 켜짐(모두에게 보냄), 다시 누르면 꺼짐(쉬어가기 취소). 정차하면 저절로 꺼짐.
+        restButton=icon(R.drawable.ic_coffee,REST_LABEL) {
+            if(restOn) { setActive(restButton,false,REST_LABEL);host.cancelRest() }
+            else { host.quick(REST_TEXT,"all");setActive(restButton,true,REST_LABEL) }
+        }
+        // 따봉: 잠깐 켜졌다 꺼지고, 작은 따봉이 거품처럼 뽀글뽀글 올라가며 사라짐.
         okButton=icon(R.drawable.ic_thumb_up,OK_LABEL) {
             host.quick(OK_TEXT,"all");setActive(okButton,true,OK_LABEL)
-            removeCallbacks(okOff);postDelayed(okOff,10_000)
+            removeCallbacks(okOff);postDelayed(okOff,450)
+            fizz(okButton,R.drawable.ic_thumb_up)
         }
         quick.addView(restButton);quick.addView(space());quick.addView(okButton)
         addView(quick,LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply { setMargins(ui.d(16),ui.d(16),0,0) })
@@ -220,7 +230,41 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         bubbles.filterValues { it.restOwner==ownerId }.keys.toList().forEach { remove(it,null) }
         if(ownerId=="me") setActive(restButton,false,REST_LABEL)
     }
-    /** 쉬어가요 버튼은 내 차가 정차할 때까지, 따봉 버튼은 10초 동안 켜진 색으로 둠. */
+    /**
+     * 버튼 근처에서 작은 아이콘 여러 개가 거품처럼 생겨 흔들리며 오른쪽 위로 떠오르다 사라짐.
+     * 버튼이 화면 위쪽에 있어 위로만 보내면 바로 잘리므로, 지도 쪽(오른쪽)으로 퍼지게 함.
+     */
+    private fun fizz(anchor: View, res: Int) {
+        val me=IntArray(2);getLocationInWindow(me);val at=IntArray(2);anchor.getLocationInWindow(at)
+        val cx=at[0]-me[0]+anchor.width/2f;val cy=at[1]-me[1]+anchor.height/2f
+        repeat(8) { i ->
+            val size=ui.d(18+random.nextInt(16))
+            val v=ImageView(context).apply {
+                setImageResource(res);setColorFilter(Palette.teal);alpha=0f;scaleX=0f;scaleY=0f
+                importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            addView(v,LayoutParams(size,size))
+            val x0=cx-size/2f;val y0=cy-size/2f
+            val dx=ui.d(20+random.nextInt(110)).toFloat();val dy=-ui.d(random.nextInt(45)).toFloat()+ui.d(25)
+            val wobble=ui.d(4+random.nextInt(6)).toFloat();val phase=random.nextFloat()*6f
+            android.animation.ValueAnimator.ofFloat(0f,1f).apply {
+                startDelay=i*55L;duration=800L+random.nextInt(400)
+                addUpdateListener {
+                    val t=it.animatedFraction
+                    v.translationX=x0+dx*t+kotlin.math.sin(t*12f+phase)*wobble
+                    v.translationY=y0+dy*t-ui.d(30)*t*t
+                    val s=Boing.getInterpolation((t*2.2f).coerceAtMost(1f))*(1f-0.3f*t)
+                    v.scaleX=s;v.scaleY=s
+                    v.alpha=if(t<0.1f) t*10f else (1f-(t-0.1f)/0.9f)
+                }
+                addListener(object: android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) { removeView(v) }
+                })
+                start()
+            }
+        }
+    }
+    /** 쉬어가요 버튼은 켜고 끌 수 있고(정차하면 꺼짐), 따봉 버튼은 누른 순간만 잠깐 켜짐. */
     private fun setActive(b: ImageView, on: Boolean, label: String) {
         b.background=ui.box(if(on) Palette.teal else Palette.white,16,true)
         b.setColorFilter(if(on) Palette.white else Palette.teal)
