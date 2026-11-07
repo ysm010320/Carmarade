@@ -7,7 +7,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import android.speech.RecognizerIntent
-import android.speech.tts.TextToSpeech
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.*
@@ -31,14 +30,39 @@ class MainActivity : Activity() {
     private var draftType=100
     private var draftDestination=Catalog.places.first()
     private val reviewDrafts=mutableMapOf<String,String>()
-    private var tts: TextToSpeech?=null
-    private var speechReady=false
+    // 음성 읽어주기(Pleos TTS 우선, 안 되면 Android TTS)와 주행 중 제한 상태.
+    private var speech: SpeechOut?=null
+    private var drivingState: DrivingState?=null
+    private var moving=false
     private var sound=false
     private lateinit var content: LinearLayout
+    // 같은 화면을 다시 그릴 때 스크롤 위치를 유지하기 위해 기억해 둠(버튼을 누를 때마다 맨 위로 튀지 않게).
+    private var scrollView: ScrollView?=null
+    private var shownScreen=""
     private val current: Trip? get()=trips.find { it.id==selectedId }
     private val driving: Boolean get()=trips.any { it.phase==Phase.DRIVING }
     private var voiceTripId: String?=null
     private var voiceRecipient="all"
+    // 주행 체험 전체 화면. 말풍선이 유지되도록 주행 화면에 있는 동안 같은 화면을 계속 씀.
+    private var driveView: DriveScreen?=null
+    private var sim: DriveSimulation?=null
+    private val ticker=android.os.Handler(android.os.Looper.getMainLooper())
+    private var ticking=false
+    private val tick=object: Runnable { override fun run() { if(onTick()) ticker.postDelayed(this,1000) else ticking=false } }
+    private val driveHost=object: DriveScreen.Host {
+        override fun quick(text: String, recipient: String)=send(text,recipient)
+        override fun voiceTo(recipient: String) { target=recipient;voice() }
+        override fun call(recipient: String)=toast("통화 기능은 준비 중이에요.")
+        override fun openPrivacy()=navigate("privacy")
+        override fun toggleSound() {
+            if(speech?.ready!=true) toast("음성 엔진을 준비하고 있어요. 잠시 후 다시 눌러 주세요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
+        }
+        override fun finishTrip()=confirmFinish()
+        override fun showHistory()=history()
+        override fun cancelRest() { sim?.cancelStop("me") }
+        override fun remainingKm(memberId: String)=sim?.remainingKm(memberId,System.currentTimeMillis())
+        override fun progress(memberId: String)=sim?.progress(memberId,System.currentTimeMillis())
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ui=Ui(this);store=TripStore(this)
@@ -46,21 +70,19 @@ class MainActivity : Activity() {
         selectedId=savedInstanceState?.getString("selected") ?: trips.firstOrNull()?.id.orEmpty()
         screen=savedInstanceState?.getString("screen") ?: "home"
         trips.find { it.phase==Phase.DRIVING }?.let { selectedId=it.id;screen="drive" }
-        tts=TextToSpeech(this) { status ->
-            if(status==TextToSpeech.SUCCESS) {
-                val result=tts?.setLanguage(Locale.KOREAN)
-                speechReady=result!=TextToSpeech.LANG_MISSING_DATA && result!=TextToSpeech.LANG_NOT_SUPPORTED
-            }
-        }
+        speech=SpeechOut(this) { }
+        // 차가 움직이면(주행 최적화 필요) 주행 화면·위치공유 설정만 보여 줌.
+        drivingState=DrivingState.attach(this) { m -> moving=m;render() }
+        moving=drivingState?.restricted ?: false
         render()
     }
     override fun onSaveInstanceState(out: Bundle) { out.putString("selected",selectedId);out.putString("screen",screen);super.onSaveInstanceState(out) }
     override fun onConfigurationChanged(config: Configuration) { super.onConfigurationChanged(config);render() }
-    override fun onDestroy() { tts?.stop();tts?.shutdown();gateway.close();super.onDestroy() }
+    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();drivingState?.release();gateway.close();super.onDestroy() }
     @Deprecated("Legacy Android activity back handling")
     override fun onBackPressed() { if(driving) navigate("drive") else if(screen!="home") navigate("home") else super.onBackPressed() }
     private fun toast(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
-    private fun say(message: String) { if(sound && speechReady) tts?.speak(message,TextToSpeech.QUEUE_FLUSH,null,"camarade") }
+    private fun say(message: String) { if(sound) speech?.say(message) }
     private fun update(next: Trip, after: String?=null): Boolean {
         val result=persistLive(trips,next,store::save)
         trips=result.trips;saveError=result.error
@@ -95,6 +117,14 @@ class MainActivity : Activity() {
     private fun note(label: String) { content.addView(ui.gap(10));content.addView(ui.text(label,12f,Palette.muted));content.addView(ui.gap(10)) }
     private fun map(t: Trip,height: Int=265): View = RouteMapView(this,t,gateway).apply { layoutParams=LinearLayout.LayoutParams(-1,ui.d(height));clipToOutline=true;background=ui.box(Palette.soft,20) }
     private fun render() {
+        val live=current
+        if(live?.phase==Phase.DRIVING && screen=="trip") screen="drive"
+        if(screen=="drive") {
+            if(live?.phase==Phase.DRIVING) { showDrive(live);return }
+            screen=if(live?.phase==Phase.FINISHED) "record" else "trip"
+        }
+        driveView=null
+        val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
         val wide=resources.configuration.screenWidthDp>=720
         val root=ui.col();root.setBackgroundColor(Palette.bg)
         val top=ui.row().apply { setPadding(ui.d(24),ui.d(14),ui.d(24),ui.d(14)) }
@@ -125,7 +155,19 @@ class MainActivity : Activity() {
             warning.addView(ui.button("저장 다시 시도") { action { store.save(trips);saveError=null;render();toast("변경 내용을 저장했어요.") } })
             content.addView(warning);content.addView(ui.gap(18))
         }
-        when(screen) { "home"->home();"trip"->planner();"drive"->drive();"privacy"->privacy();"records"->records();"record"->record();"create"->create();else->home() }
+        if(moving && screen!="privacy") parkedOnly()
+        else when(screen) { "home"->home();"trip"->planner();"privacy"->privacy();"records"->records();"record"->record();"create"->create();else->home() }
+        shownScreen=screen;scrollView=scroll
+        // 첫 프레임을 그리기 전에 위치를 되돌려 맨 위가 잠깐 보이는 깜빡임을 막음. 내용이 짧아졌으면 ScrollView가 끝에 맞춰 줌.
+        if(keepY>0) scroll.viewTreeObserver.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean { scroll.viewTreeObserver.removeOnPreDrawListener(this);scroll.scrollTo(0,keepY);return true }
+        })
+    }
+    /** 차가 움직이는 동안 입력·설정 화면 대신 보여 줌. Pleos는 주행 중 설정(NO_SETUP)을 제한함. */
+    private fun parkedOnly() {
+        title("DRIVE SAFELY","주행 중에는 운전에 집중해요","모임 만들기·경로 설정·후기 작성은 정차한 뒤에 할 수 있어요.")
+        if(driving) { content.addView(ui.button("주행 화면으로 돌아가기",true) { navigate("drive") });content.addView(ui.gap(12)) }
+        content.addView(ui.button("위치공유 설정") { navigate("privacy") })
     }
     private fun home() {
         title("OUR NEXT JOURNEY","오늘은, 어디로 함께 갈까요?","각자의 차에서 시작해도, 우리의 이야기는 함께.")
@@ -163,7 +205,7 @@ class MainActivity : Activity() {
     private fun planner() {
         val t=current
         if(t==null || t.phase==Phase.FINISHED) { title("LET'S GO","새로운 동행을 준비해요");content.addView(ui.button("모임 만들기",true) { navigate("create") });return }
-        if(t.phase==Phase.DRIVING) { screen="drive";drive();return }
+        if(t.phase==Phase.DRIVING) { screen="drive";content.post { render() };return }
         title("PLAN TOGETHER",t.name,"공통 목적지와 경유지를 확인하고, 각자 수락해요.")
         val c=ui.card();val row=ui.row();ui.add(row,ui.text("우리의 목적지",17f,Palette.ink,true),1f);row.addView(ui.chip("경로 v${t.route.version}"));c.addView(row)
         c.addView(ui.gap(16));c.addView(ui.text(t.route.destination.name,26f,Palette.ink,true));c.addView(ui.gap(14))
@@ -227,43 +269,67 @@ class MainActivity : Activity() {
         input.addTextChangedListener(object: TextWatcher { override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){refresh(s.toString())};override fun afterTextChanged(s:Editable?){} })
         refresh("");dialog.show()
     }
-    private fun drive() {
-        val t=current ?: return
-        if(t.phase!=Phase.DRIVING) { screen="trip";planner();return }
-        title("ON THE ROAD", "같은 목적지, 함께 가는 우리", t.route.destination.name+"으로 가는 동행")
-        val status=ui.row();ui.add(status,ui.chip("D · 주행 체험",Palette.dark,Palette.lime),1f,margin=3)
-        ui.add(status,ui.chip(if(t.members.first().sharing==Sharing.OFF) "내 위치 숨김" else "가상 위치 공유 중"),1f,margin=3);content.addView(status);content.addView(ui.gap(16))
-        content.addView(map(t,280));content.addView(ui.gap(16))
-        val crew=ui.row()
-        t.members.forEach { m->
-            val card=ui.card(padding=12);card.addView(ui.text(m.name,17f,Palette.ink,true));card.addView(ui.gap(7));card.addView(ui.text(if(m.sharing==Sharing.OFF) "위치 숨김" else if(m.id=="me") "가상 위치" else "동행 중 · 가상",11f,Palette.muted));ui.add(crew,card,1f,margin=3)
-        };content.addView(crew)
-        sectionTitle("한마디로 전하는 안부")
-        if(t.members.none { it.id==target } && target!="all") target="all"
-        val recipient=if(target=="all") "모두에게" else (t.members.find { it.id==target }?.name ?: "모두")+"에게"
-        content.addView(ui.button("받는 사람: $recipient") {
-            val members=t.members.filter { it.id!="me" };val labels=listOf("모두에게")+members.map { "${it.name}에게 (가상)" }
-            AlertDialog.Builder(this).setTitle("받는 사람").setItems(labels.toTypedArray()) { _,n->target=if(n==0) "all" else members[n-1].id;render() }.show()
-        });content.addView(ui.gap(10))
-        val quick=ui.row();ui.add(quick,ui.button("☕  잠깐 쉬어가요") { send("다음 휴게소에서 잠깐 쉬어가요.") },1f,margin=3);ui.add(quick,ui.button("✓  잘 따라가고 있어요") { send("잘 따라가고 있어요.") },1f,margin=3);content.addView(quick);content.addView(ui.gap(10))
-        content.addView(ui.button("◉  음성으로 메시지 남기기",true) { voice() });content.addView(ui.gap(10))
-        content.addView(ui.button(if(sound) "음성 읽어주기 켜짐" else "음성 읽어주기 꺼짐") {
-            if(!speechReady) toast("이 기기에 한국어 음성 엔진이 설치되어 있지 않아요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
-        })
-        note("메시지는 체험 기록에만 남습니다. 실제 다른 사용자에게 전송하지 않아요.")
-        t.messages.takeLast(3).reversed().forEach { m->
-            val c=ui.card(padding=16);c.addView(ui.text(m.text,17f));c.addView(ui.gap(6));c.addView(ui.text("나 → ${if(m.recipient=="all") "모두" else t.members.find { it.id==m.recipient }?.name ?: "멤버"} · 체험 기록",12f,Palette.muted));content.addView(c);content.addView(ui.gap(8))
-        }
-        content.addView(ui.gap(14));content.addView(ui.button("도착 · 동행 체험 종료") {
-            AlertDialog.Builder(this).setTitle("이번 동행을 마칠까요?").setMessage("모든 위치공유가 종료되고 주행 체험 기록이 남아요.")
-                .setPositiveButton("종료하기") { _,_-> action {
-                    val latest=current ?: return@action;val now=System.currentTimeMillis();val distance=((now-latest.startedAt!!).coerceAtLeast(0)/1000.0)*0.02
-                    if(update(latest.finish("me",now,distance),"record")) say("동행이 종료되었습니다. 위치 공유를 껐어요.")
-                } }.setNegativeButton("계속 달리기",null).show()
-        })
+    private fun showDrive(t: Trip) {
+        val v=driveView?.takeIf { it.tripId==t.id } ?: DriveScreen(this,ui,gateway,driveHost).also { driveView=it }
+        if(sim?.tripId!=t.id) sim=DriveSimulation(t,System.currentTimeMillis())
+        v.bind(t,sound)
+        if(v.parent==null) setContentView(v)
+        shownScreen="drive";scrollView=null
+        if(!ticking) { ticking=true;ticker.postDelayed(tick,1000) }
     }
-    private fun send(text: String, mode: InputMode=InputMode.PRESET) {
-        action { current?.let { t-> if(update(t.send("me",target,text,System.currentTimeMillis(),mode))) { toast("체험 메시지를 기록했어요.");say(text) } } }
+    private fun memberName(t: Trip, id: String)=if(id=="me") "나" else t.members.find { it.id==id }?.name ?: "멤버"
+    private fun spoken(label: String)=label.replace("km","킬로미터").replace("m","미터")
+    /** 1초마다: 가상 일행의 거리 알림·정차·메시지를 처리. 주행 중인 동행이 없으면 멈춤. */
+    private fun onTick(): Boolean {
+        val t=trips.find { it.phase==Phase.DRIVING } ?: run { sim=null;return false }
+        val now=System.currentTimeMillis()
+        val s=sim?.takeIf { it.tripId==t.id } ?: DriveSimulation(t,now).also { sim=it }
+        s.tick(now).forEach { e -> when(e) {
+            is SimEvent.Distance -> {
+                driveView?.showDistance(e.memberId,e.label)
+                val name=memberName(t,e.memberId)
+                say(if(e.label==ARRIVING_LABEL) "${name}님 곧 도착해요." else "${name}님 ${spoken(e.label)} 남았어요.")
+            }
+            is SimEvent.Stopped -> driveView?.clearRest(e.memberId)
+            is SimEvent.Incoming -> receive(t.id,e)
+        } }
+        driveView?.refresh()
+        return true
+    }
+    private fun receive(tripId: String, e: SimEvent.Incoming) {
+        val t=trips.find { it.id==tripId && it.phase==Phase.DRIVING } ?: return
+        val now=System.currentTimeMillis()
+        try { update(t.send(e.memberId,e.recipient,e.text,now)) } catch(_: Exception) { return }
+        driveView?.showMessage(e.memberId,e.recipient,e.text)
+        if(quickKind(e.text)==QuickKind.REST) sim?.stopSoon(e.memberId,now)
+        say("${memberName(t,e.memberId)}님, ${e.text}")
+    }
+    private fun history() {
+        val t=current ?: return
+        val fmt=SimpleDateFormat("HH:mm",Locale.KOREA)
+        val lines=t.messages.reversed().joinToString("\n\n") { m ->
+            "${fmt.format(Date(m.at))}  ${memberName(t,m.sender)} → ${if(m.recipient=="all") "모두" else memberName(t,m.recipient)}\n${m.text}"
+        }
+        AlertDialog.Builder(this).setTitle("메시지 기록")
+            .setMessage(if(lines.isEmpty()) "아직 주고받은 메시지가 없어요." else "$lines\n\n체험 기록입니다. 다른 기기로 전송되지 않아요.")
+            .setPositiveButton("닫기",null).show()
+    }
+    private fun confirmFinish() {
+        AlertDialog.Builder(this).setTitle("이번 동행을 마칠까요?").setMessage("모든 위치공유가 종료되고 주행 체험 기록이 남아요.")
+            .setPositiveButton("종료하기") { _,_-> action {
+                val latest=current ?: return@action;val now=System.currentTimeMillis();val distance=((now-latest.startedAt!!).coerceAtLeast(0)/1000.0)*0.02
+                if(update(latest.finish("me",now,distance),"record")) say("동행이 종료되었습니다. 위치 공유를 껐어요.")
+            } }.setNegativeButton("계속 달리기",null).show()
+    }
+    /** 내가 보낸 메시지는 말풍선으로만 보여 주고 소리로 다시 읽지 않음. */
+    private fun send(text: String, recipient: String=target, mode: InputMode=InputMode.PRESET) {
+        action { current?.let { t->
+            val now=System.currentTimeMillis()
+            update(t.send("me",recipient,text,now,mode))
+            // 모두에게 보낸 쉬어가요·따봉은 왼쪽 위 버튼 색으로 표시하므로 말풍선을 띄우지 않음.
+            if(recipient!="all" || quickKind(text)==QuickKind.TEXT) driveView?.showMessage("me",recipient,text)
+            if(quickKind(text)==QuickKind.REST) sim?.stopSoon("me",now)
+        } }
     }
     private fun voice() {
         val intent=Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_LANGUAGE,"ko-KR").putExtra(RecognizerIntent.EXTRA_PROMPT,"일행에게 전할 말을 해주세요")
@@ -278,7 +344,7 @@ class MainActivity : Activity() {
             val text=data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() ?: return
             if(current?.id!=voiceTripId || current?.phase==Phase.FINISHED) { toast("동행이 변경되어 메시지를 기록하지 않았어요.");return }
             AlertDialog.Builder(this).setTitle("이렇게 전할까요?").setMessage(text)
-                .setPositiveButton("체험 기록에 남기기") { _,_-> target=voiceRecipient;send(text,InputMode.VOICE) }.setNegativeButton("취소",null).show()
+                .setPositiveButton("체험 기록에 남기기") { _,_-> target=voiceRecipient;send(text,voiceRecipient,InputMode.VOICE) }.setNegativeButton("취소",null).show()
         }
     }
     private fun privacy() {
