@@ -30,6 +30,7 @@
 - `preview/index.html`: 브라우저(Chromium)에서 오류 없이 로드됨.
 - Android Gradle 빌드 성공, lint 오류 0개(경고 9개). 에뮬레이터 실행은 아직 못 함. 자세한 내용은 `docs/sdk-verification.md`.
 - (추가, 같은 날) Pleos Connect v2.1.0 에뮬레이터에서 앱 실행 확인. SDK 점검 화면으로 NaviHelper(경로+경유지 적용, 현재 위치), Vehicle(기어), FusedLocation, TTS가 실제로 응답함을 확인. STT는 초기화까지만 확인. `docs/sdk-verification.md`의 "에뮬레이터 실행 결과" 참고.
+- (추가) 주행 상태 시험 결과, **현재 메인 앱은 차가 움직이면 Pleos가 "주행 중에는 사용할 수 없습니다"로 가립니다.** 주행 화면을 쓰려면 `distractionOptimized` 선언과 Pleos 심사 확인이 필요합니다. 또 Pleos 설정은 주행 중에도 키보드를 금지하지 않으므로 앱 자체의 키보드 차단이 계속 필요합니다. 도착 이벤트는 에뮬레이터에서 만들 수 없어 "도착 시 자동 종료" 시연은 앱 내 시뮬레이션이 필요합니다. 자세한 내용은 `docs/sdk-verification.md`의 "추가 확인".
 
 ## 인수인계 문서와 달라진 점 (팀원 조사 `docs/contest-and-sdk.md`)
 

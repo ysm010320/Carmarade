@@ -94,9 +94,42 @@ Pleos Connect v2.1.0 에뮬레이터(API 34, x86_64, Automotive, RAM 4GB, WHPX �
 - **JDK 17이 필요합니다.** Android Studio에 들어 있는 JDK 25로는 Gradle 8.14/Kotlin 2.0.21 빌드가 시작되지 않습니다. Temurin 17을 쓰세요(이번에는 `~/.jdks/jdk-17.0.21+9`에 받아 `JAVA_HOME`으로 지정했습니다).
 - 이미지는 SDK Manager 대신 `crp-sys-img.xml`에 적힌 `crp_car_emulator.zip`(4.09GB, SHA-1 `b4f858d5…`)을 직접 받아 `Sdk/system-images/android-34/pleos_car_emulator/x86_64`에 풀었습니다. 압축을 풀면 약 20GB입니다. AVD는 `avdmanager create avd -n Pleos_Connect_2_1 -k "system-images;android-34;android-automotive;x86_64" -d automotive_1024p_landscape`로 만든 뒤 RAM 4GB, 데이터 6GB, 호스트 GPU, Cold boot로 바꿨습니다.
 
+## 추가 확인: 주행 상태·권한·도착 이벤트·STT (2026-11-07)
+
+주행 상태는 Pleos 웹 Virtual Console로 바꿨습니다(`adb forward tcp:8088 tcp:8088` → `http://127.0.0.1:8088` → Emulation Controls → Gear Selection, 화면의 ACCEL/BRAKE). 공식 안내: https://document.pleos.ai/docs/pleos-only/app-test-guide/virtual-console-guide
+문서의 주행 규제 명령(`cmd hmg_car_service ... driving_regulation`)은 이 이미지에 서비스가 없어 쓸 수 없었습니다.
+
+### 주행 중에는 앱 화면이 가려집니다 (가장 중요)
+- 차가 움직이자 Pleos 홈이 앱 화면을 **"주행 중에는 사용할 수 없습니다."**로 덮었습니다. 홈 화면 로그에 `distractionOptimized: false`로 판정됩니다. **현재 메인 앱(카마라드 체험)도 같은 상태라 주행 화면을 실제 주행 중에는 보여 줄 수 없습니다.**
+- 액티비티에 Android Automotive 표준 선언 `<meta-data android:name="distractionOptimized" android:value="true" />`를 넣으면 주행 중(11~30km/h)에도 화면이 표시됐습니다. 에뮬레이터는 직접 설치한 앱의 선언을 그대로 인정합니다. 실차·App Market에서도 인정되는지는 Pleos 심사 기준(앱 카테고리, 운전자 주의 분산 가이드)을 확인해야 합니다.
+- 이번에는 SDK 점검 화면에만 넣었습니다. 메인 앱에 넣을지는 결정이 필요합니다(넣으면 키보드 화면 등도 주행 중에 열리므로 앱이 스스로 막아야 함).
+
+### CarUxRestrictions
+| 상태 | Pleos 설정 | 앱이 받은 값 |
+|---|---|---|
+| P단(parked) | 제한 없음 `0x0` | 주행 최적화 필요=false, `0x0` |
+| D단 정지(idling) | `0x50` | 주행 최적화 필요=true, `0x50`(동영상 금지, 설정 금지) |
+| D단 주행(moving) | `0x50` | 상태가 바뀌어도 값이 같아 추가 이벤트 없음 |
+- **Pleos 설정은 주행 중에도 키보드를 금지하지 않습니다(`UX_RESTRICTIONS_NO_KEYBOARD` 없음).** 문자열 최대 120자, 목록 최대 21개, 깊이 3입니다. 주행 중 키보드 금지는 앱이 직접 해야 하며, 판단 기준은 `isRequiresDistractionOptimization`(D단이면 정지 중에도 true)이나 기어(P단 여부)를 쓰면 됩니다.
+- Vehicle SDK 기어 이벤트도 `GEAR_DRIVE`, `GEAR_PARK`로 바로 왔습니다.
+
+### 권한 대화상자 (`adb install -g` 없이 새로 설치)
+- 마이크(`RECORD_AUDIO`) → 위치(`FUSED_LOCATION`) 순서로 대화상자가 떴고, 둘 다 허용하자 모든 점검이 통과했습니다.
+- **`FUSED_LOCATION` 대화상자 문구가 "카마라드 체험에서 알 수 없는 작업 실행하도록 허용하시겠습니까?"로 표시됩니다.** Pleos 권한에 설명 문구가 없어서입니다. 사용자에게 혼란을 주므로 권한을 요청하기 전에 앱 화면에서 "내 차 위치를 일행에게 보여 주기 위해 위치 권한이 필요합니다" 같은 안내를 먼저 보여 줘야 합니다.
+- 설치 직후 첫 실행에서는 대화상자가 떴다가 곧바로 사라져 앱이 빈 화면으로 남았습니다(홈 화면이 작업 창을 숨김). 다시 실행하자 정상으로 떴습니다. 한 번만 일어났지만 실차에서도 확인이 필요합니다.
+
+### 도착 이벤트: 에뮬레이터에서 확인 불가
+- 경로 요청에 `onRouteEnded`(이전 경로 종료) → `onRouteStarted` → `onNavigationStatus: ROUTE_DRIVE` 순서로 이벤트가 왔습니다.
+- 내비 현재 위치는 판교(37.4127, 127.0947)에 고정되어 있습니다. 에뮬레이터 GPS(`geo fix`)를 바꿔도, Virtual Console로 차를 30km/h로 달려도 움직이지 않았습니다. Pleos 문서에도 내비 모의주행 방법이 없습니다. 그래서 `onWayPointArrived`·`onDestinationArrived`는 확인하지 못했고, 점검 화면에는 두 이벤트를 받으면 표시하도록 넣어 두었습니다.
+- **"도착 시 위치공유 자동 종료"는 에뮬레이터 시연에서 내비 이벤트로 보여 줄 수 없습니다.** 시연용으로는 앱 안의 시뮬레이션이 필요합니다.
+
+### STT: 녹음·인식 루프는 동작, 결과는 미확인
+- `request()` 후 Pleos 음성 서비스가 마이크를 열고(16kHz) 인식 루프를 실제로 돌렸습니다(서비스 로그 `recognize(ai.camarade.app.demo) ...`).
+- 에뮬레이터 PC 마이크 연결(`adb emu avd hostmicon`)을 켜고 사람이 말했지만, 앱이 받은 입력 크기(RMS)가 무음 수준(0.5)에서 변하지 않아 인식 결과가 없었습니다. 에뮬레이터가 소리가 없는 Windows 입력 장치를 잡은 것으로 보입니다. 시험 뒤 연결은 다시 껐습니다.
+- **`stop()`을 부르지 않으면 인식 세션이 계속 다시 시작되며 마이크를 놓지 않습니다**(상태 표시줄 마이크 표시가 계속 켜짐). 점검 화면은 15초 뒤와 화면을 닫을 때 `stop()`을 부르도록 고쳤습니다. 실제 기능에서도 반드시 멈춰야 합니다.
+
 ## 에뮬레이터에서 남은 확인
 
-1. STT 인식 결과: 에뮬레이터 확장 제어(Extended controls) → Microphone에서 "Virtual microphone uses host audio input"을 켜고 말해 `onUpdated`가 오는지 확인.
-2. 주행 상태를 바꿔 `CarUxRestrictions` 변화와 앱 동작 확인(Virtual Console). 기어를 D로 바꿔 기어 이벤트도 함께 확인.
-3. 도착 이벤트(`onDestinationArrived`, `onWayPointArrived`)는 내비 모의 주행으로 확인 필요.
-4. `adb install -g` 없이 설치해 `FUSED_LOCATION`·마이크 권한 대화상자 흐름 확인.
+1. STT 인식 결과: Windows 기본 입력 장치를 실제 마이크로 맞추고, 에뮬레이터 Extended controls → Microphone에서 호스트 입력을 켠 뒤 다시 시험(점검 화면 로그의 RMS가 오르는지 먼저 확인).
+2. 도착 이벤트: 실차 또는 내비 모의주행 기능이 생기면 확인.
+3. 메인 앱의 `distractionOptimized` 적용 여부 결정 후 주행 중 화면 확인.

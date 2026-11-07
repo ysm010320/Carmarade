@@ -1,6 +1,11 @@
 package ai.camarade.app
 
 import android.app.Activity
+import android.car.Car
+import android.car.drivingstate.CarUxRestrictions
+import android.car.drivingstate.CarUxRestrictionsManager
+import ai.pleos.playground.navi.constants.NavigationStatus
+import ai.pleos.playground.navi.data.WaypointArrivedInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
@@ -60,7 +65,10 @@ class SdkCheckActivity : Activity() {
     private val fused=Check("FusedLocation 1.1.3","내 차 위치")
     private val stt=Check("SpeechToText 3.3.1 (ON_DEVICE)","음성 메시지 입력")
     private val tts=Check("TextToSpeech 3.3.1 (ON_DEVICE)","받은 메시지 읽어주기")
-    private val checks=listOf(navi,vehicleCheck,fused,stt,tts)
+    private val uxr=Check("CarUxRestrictions (Android)","주행 중 화면·입력 제한 판단(Pleos 가이드 권장)")
+    private val checks=listOf(navi,vehicleCheck,uxr,fused,stt,tts)
+    private var car: Car?=null
+    private var uxrManager: CarUxRestrictionsManager?=null
 
     private var naviHelper: NaviHelper?=null
     private var vehicle: Vehicle?=null
@@ -83,10 +91,11 @@ class SdkCheckActivity : Activity() {
     }
     override fun onDestroy() {
         main.removeCallbacksAndMessages(null)
+        runCatching { uxrManager?.unregisterListener();car?.disconnect() }
         runCatching { naviHelper?.removeListener(naviListener);naviHelper?.release() }
         runCatching { vehicle?.getGear()?.unregisterGearSelection(gearListener);vehicle?.release() }
         runCatching { fusedLocation?.unregisterFusedLocationCallback(fusedListener);fusedLocation?.release() }
-        runCatching { speechToText?.removeListener(sttListener);speechToText?.release() }
+        runCatching { speechToText?.stop();speechToText?.removeListener(sttListener);speechToText?.release() }
         runCatching { textToSpeech?.removeEventListener(ttsListener);textToSpeech?.release() }
         super.onDestroy()
     }
@@ -159,6 +168,13 @@ class SdkCheckActivity : Activity() {
             )
             gear.registerGearSelection(gearListener)
         }
+        guard(uxr,"초기화") {
+            if(!packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)) { mark(uxr,State.FAIL,"차량(Automotive) 기기가 아닙니다.");return@guard }
+            val c=Car.createCar(this);car=c
+            val m=c.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager;uxrManager=m
+            m.registerListener { r -> mark(uxr,State.OK,"변경 이벤트: ${describe(r)}") }
+            mark(uxr,State.OK,"현재: ${describe(m.currentCarUxRestrictions)}")
+        }
         guard(fused,"초기화") {
             val f=FusedLocation(applicationContext);fusedLocation=f
             val supported=f.isSupported()
@@ -202,7 +218,10 @@ class SdkCheckActivity : Activity() {
         val s=speechToText
         if(s==null || !sttReady) { log("STT가 아직 준비되지 않았습니다.");return@guard }
         s.request()
+        // stop()을 부르지 않으면 인식 세션이 계속 다시 시작되며 마이크를 놓지 않는다(에뮬레이터에서 확인).
+        main.removeCallbacks(stopListening);main.postDelayed(stopListening,15_000)
     }
+    private val stopListening=Runnable { runCatching { speechToText?.stop();log("STT stop() 호출(15초 경과)") } }
     private fun lastLocation() = guard(fused,"마지막 위치") {
         val f=fusedLocation ?: return@guard log("FusedLocation이 아직 없습니다.")
         f.getLastKnownLocation(object: FusedLocationListener {
@@ -216,12 +235,32 @@ class SdkCheckActivity : Activity() {
         log("NaviHelper.getCurrentLocationInfo() 요청");helper.getCurrentLocationInfo()
     }
     private fun describe(l: LocationData) = l.toString()
+    private fun describe(r: CarUxRestrictions): String {
+        val flags=r.activeRestrictions
+        val names=listOf(
+            CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD to "키보드 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_VIDEO to "동영상 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_TEXT_MESSAGE to "문자 메시지 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH to "글자 수 제한",
+            CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT to "목록 길이 제한",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_SETUP to "설정 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_DIALPAD to "다이얼패드 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_FILTERING to "필터링 금지",
+            CarUxRestrictions.UX_RESTRICTIONS_NO_VOICE_TRANSCRIPTION to "음성 받아쓰기 금지",
+        ).filter { flags and it.first!=0 }.joinToString(", ") { it.second }
+        return "주행 최적화 필요=${r.isRequiresDistractionOptimization}, 제한=0x${Integer.toHexString(flags)}${if(names.isEmpty()) "" else " ($names)"}"
+    }
 
     private val naviListener=object: NaviHelperEventListener {
         override fun onRouteStarted(routeStartInfo: RouteStartInfo) { mark(navi,State.OK,"onRouteStarted: $routeStartInfo") }
         override fun onRoutingCompleted() { mark(navi,State.OK,"onRoutingCompleted 수신(경로 적용 완료)") }
         override fun onCurrentLocationInfo(currentLocationInfo: CurrentLocationInfo) { mark(navi,State.OK,"onCurrentLocationInfo: $currentLocationInfo") }
-        override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) { log("NaviHelper onDestinationArrived: $destinationArrivedInfo") }
+        override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) { mark(navi,State.OK,"onDestinationArrived: $destinationArrivedInfo") }
+        override fun onWayPointArrived(waypointArrivedInfo: WaypointArrivedInfo) { mark(navi,State.OK,"onWayPointArrived: $waypointArrivedInfo") }
+        override fun onRouteEnded() { log("NaviHelper onRouteEnded") }
+        override fun onRouteCancelled() { log("NaviHelper onRouteCancelled") }
+        override fun onDestinationChanged() { log("NaviHelper onDestinationChanged") }
+        override fun onNavigationStatus(navigationStatus: NavigationStatus) { log("NaviHelper onNavigationStatus: $navigationStatus") }
         override fun onError(errorCode: NaviErrorCode) { mark(navi,State.FAIL,"onError: $errorCode") }
     }
     private val gearListener=object: GearSelectionListener {
@@ -244,7 +283,13 @@ class SdkCheckActivity : Activity() {
         override fun onStartedRecognition() { log("STT onStartedRecognition") }
         override fun onUpdated(stt: String, completed: Boolean) { if(completed) mark(this@SdkCheckActivity.stt,State.OK,"인식 결과: $stt") else log("STT 중간 결과: $stt") }
         override fun onUpdatedEpdData(on: Long, off: Long) = Unit
-        override fun onUpdatedRms(rms: Double) = Unit
+        private var rmsCount=0
+        private var rmsMax=Double.NEGATIVE_INFINITY
+        // 마이크로 소리가 실제로 들어오는지 확인하려고 20회마다 최대 RMS를 남긴다.
+        override fun onUpdatedRms(rms: Double) {
+            rmsMax=maxOf(rmsMax,rms);rmsCount++
+            if(rmsCount%20==0) { log("STT 마이크 입력 RMS 최대 ${"%.1f".format(rmsMax)} (${rmsCount}회)");rmsMax=Double.NEGATIVE_INFINITY }
+        }
         override fun onEndedRecognition() { log("STT onEndedRecognition") }
         override fun onError(errorType: SttError) { mark(stt,State.FAIL,"인식 오류: $errorType") }
     }

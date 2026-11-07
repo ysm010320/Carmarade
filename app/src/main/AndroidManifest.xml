@@ -15,8 +15,11 @@
         <activity android:name="ai.camarade.app.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
+        <uses-library android:name="android.car" android:required="false" />
         <activity android:name="ai.camarade.app.SdkCheckActivity" android:label="카마라드 SDK 점검" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <!-- 주행 중에도 화면을 띄울 수 있는지 시험하기 위한 Android Automotive 선언 -->
+            <meta-data android:name="distractionOptimized" android:value="true" />
         </activity>
     </application>
 </manifest>
