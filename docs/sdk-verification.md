@@ -67,13 +67,36 @@
   (https://document.pleos.ai/docs/pleos-only/vehicle-app-planning-guide/driver-distraction-guideline)
 - **최소 SDK API 28:** 차량 보안 요건(서명 키 교체) 때문이라고 명시되어 있습니다. 현재 설정과 일치합니다.
 
-## 에뮬레이터에서 남은 확인 (Android Studio)
+## 에뮬레이터 실행 결과 (2026-11-07, Windows PC)
 
-1. SDK Manager → SDK Update Sites에 `https://nexus-playground.pleos.ai/repository/raw-releases/connect-avd/2.x/crp-sys-img.xml`(Windows/Linux) 또는 `.../crp-arm64-sys-img.xml`(Mac) 추가.
-2. API 34의 "Pleos Connect v2.1.0" 이미지 설치(x86_64 이미지 약 4GB). Automotive 기기로 AVD 생성, Cold boot, RAM 4GB.
-3. 현재 APK 설치 후 화면·조작 확인.
-4. SDK 검사용 빌드를 설치해 확인:
-   - NaviHelper 경로 요청에 `onRoutingCompleted`가 오는지
-   - `onCurrentLocationInfo`로 위치가 오는지
-   - FusedLocation·STT·TTS가 에뮬레이터에서 실제로 응답하는지, 아니면 권한·승인 오류가 나는지
-5. 주행 상태를 바꿔 `CarUxRestrictions` 변화와 앱 동작 확인(Virtual Console).
+Pleos Connect v2.1.0 에뮬레이터(API 34, x86_64, Automotive, RAM 4GB, WHPX 가속)에서 앱을 실행했습니다. 빌드 지문은 `Pleos/crp_avd/crp_avd_x86_64:14/RELEASE.release_connect_v2.1.0`입니다.
+점검에는 앱에 새로 넣은 **SDK 점검 화면**(`SdkCheckActivity`, 런처 이름 "카마라드 SDK 점검")을 썼습니다. 카드의 '확인됨'은 SDK에서 실제 콜백을 받은 경우에만 표시됩니다. 같은 내용이 Logcat 태그 `CarmaradeSdk`에도 남습니다.
+
+![SDK 점검 화면](screenshots/sdk-check-emulator.png)
+
+| SDK | 결과 | 실제로 받은 응답 |
+|---|---|---|
+| NaviHelper 3.0.5 | **동작** | `initialize` 연결 성공. `requestRouteWithWaypoints`(목적지+경유지 1개)를 보내자 Pleos 내비가 앞으로 나와 길안내를 시작했고 `onRouteStarted(RouteStartInfo(...))`가 왔습니다. `getCurrentLocationInfo()` → `onCurrentLocationInfo`로 위도·경도·주소(`수정구 시흥동`)·routeId를 받았습니다. |
+| Vehicle 2.3.2 (기어) | **동작** | `getGear().getCurrentGearSelectionState` → `GEAR_PARK`, `registerGearSelection` 리스너도 `GEAR_PARK` 이벤트를 받았습니다. |
+| FusedLocation 1.1.3 | **동작** | `isSupported()=true`. `getLastKnownLocation`과 등록 콜백이 약 1초마다 `LocationData`를 줍니다. 에뮬레이터 GPS를 따르며, `adb emu geo fix 128.8961 37.7519`(강릉)로 바꾸자 위치도 바뀌었습니다. |
+| TextToSpeech 3.3.1 (ON_DEVICE) | **동작** | 초기화 성공. `speak()`에 `onReady → onStart → onDone`이 왔습니다. 클라이언트 ID·시크릿 없이 ON_DEVICE 모드만 썼습니다. |
+| SpeechToText 3.3.1 (ON_DEVICE) | **부분 확인** | 초기화 성공, `request()` 후 `onReady`까지 받았습니다. 에뮬레이터 마이크로 들어온 음성이 없어 인식 결과(`onUpdated`)는 확인하지 못했습니다. |
+
+### 이번 실행에서 알게 된 점
+- **'준비 중' SDK도 에뮬레이터에서는 매니페스트 권한만으로 동작합니다.** FusedLocation·STT·TTS가 그렇습니다. 다만 이것은 에뮬레이터 결과일 뿐이고, 실차 배포나 App Market 심사에서 허용된다는 뜻은 아닙니다. 기획서에는 여전히 "Pleos 제공 예정 SDK 연동"으로 적는 편이 안전합니다.
+- **위치 출처가 둘입니다.** 에뮬레이터에서 내비 위치(`onCurrentLocationInfo`, 판교 부근)와 FusedLocation 위치(에뮬레이터 GPS, 기본값은 미국 마운틴뷰)가 서로 달랐습니다. FusedLocation이 열리지 않아도 **내비 위치로 내 위치를 얻을 수 있음**이 확인됐습니다.
+- `FUSED_LOCATION`은 런타임 권한이라 점검 화면에서 요청합니다. 이번 실행은 `adb install -g`로 권한을 미리 준 상태라 권한 대화상자는 확인하지 않았습니다.
+- 경로 요청 뒤 10초 안에 `onRoutingCompleted`는 오지 않았고 `onRouteStarted`만 왔습니다. 경로 적용 확인은 `onRouteStarted`를 기준으로 하는 편이 좋습니다.
+- 에뮬레이터의 시스템 키보드(`ai.umos.inputmethod`)가 가끔 스스로 종료됩니다. 우리 앱과는 관계없는 이미지 쪽 문제입니다.
+- 기존 메인 화면(카마라드 체험)도 Pleos 화면 안에서 정상 표시됩니다.
+
+### 이 PC에서 빌드·실행하는 방법
+- **JDK 17이 필요합니다.** Android Studio에 들어 있는 JDK 25로는 Gradle 8.14/Kotlin 2.0.21 빌드가 시작되지 않습니다. Temurin 17을 쓰세요(이번에는 `~/.jdks/jdk-17.0.21+9`에 받아 `JAVA_HOME`으로 지정했습니다).
+- 이미지는 SDK Manager 대신 `crp-sys-img.xml`에 적힌 `crp_car_emulator.zip`(4.09GB, SHA-1 `b4f858d5…`)을 직접 받아 `Sdk/system-images/android-34/pleos_car_emulator/x86_64`에 풀었습니다. 압축을 풀면 약 20GB입니다. AVD는 `avdmanager create avd -n Pleos_Connect_2_1 -k "system-images;android-34;android-automotive;x86_64" -d automotive_1024p_landscape`로 만든 뒤 RAM 4GB, 데이터 6GB, 호스트 GPU, Cold boot로 바꿨습니다.
+
+## 에뮬레이터에서 남은 확인
+
+1. STT 인식 결과: 에뮬레이터 확장 제어(Extended controls) → Microphone에서 "Virtual microphone uses host audio input"을 켜고 말해 `onUpdated`가 오는지 확인.
+2. 주행 상태를 바꿔 `CarUxRestrictions` 변화와 앱 동작 확인(Virtual Console). 기어를 D로 바꿔 기어 이벤트도 함께 확인.
+3. 도착 이벤트(`onDestinationArrived`, `onWayPointArrived`)는 내비 모의 주행으로 확인 필요.
+4. `adb install -g` 없이 설치해 `FUSED_LOCATION`·마이크 권한 대화상자 흐름 확인.
