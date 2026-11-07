@@ -12,8 +12,10 @@
     <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <application android:label="카마라드 체험" android:icon="@drawable/ic_camarade" android:theme="@style/AppTheme" android:allowBackup="false" android:supportsRtl="true">
-        <activity android:name="ai.camarade.app.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize" android:windowSoftInputMode="adjustResize">
+        <activity android:name="ai.camarade.app.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+            <!-- 주행 중에도 화면을 띄움. 차가 움직이면 앱이 직접 주행 화면·위치공유 설정만 보여 준다(DrivingState). -->
+            <meta-data android:name="distractionOptimized" android:value="true" />
         </activity>
         <uses-library android:name="android.car" android:required="false" />
         <activity android:name="ai.camarade.app.SdkCheckActivity" android:label="카마라드 SDK 점검" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale">
