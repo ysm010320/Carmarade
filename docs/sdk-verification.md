@@ -134,3 +134,35 @@ Pleos Connect v2.1.0 에뮬레이터(API 34, x86_64, Automotive, RAM 4GB, WHPX �
 2. 도착 이벤트: 실차 또는 내비 모의주행 기능이 생기면 확인.
 3. ~~메인 앱의 `distractionOptimized` 적용 여부 결정 후 주행 중 화면 확인.~~ 2026-11-08 적용함. D단 56km/h에서 주행 화면이 계속 보이고, 주행 중에는 앱이 직접 주행 화면·위치공유 설정만 열어 줍니다(CarUxRestrictions의 주행 최적화 필요 상태 기준). P로 바꾸면 다른 화면이 다시 열립니다.
 4. 음성 읽어주기를 Pleos TTS(ON_DEVICE)로 바꿈. 에뮬레이터 로그에서 화자 seoyoon으로 발화 후 onDone까지 확인. Pleos 초기화가 실패하면 Android TTS로 바꿉니다.
+
+## 지도 API 확인 (2026-11-10)
+
+Pleos Maven 저장소의 모든 패키지(`NaviHelper`, `navi-data`, `Vehicle`, `FusedLocation`, `SpeechToText`, `TextToSpeech`, `LLM`, `placesense` 등)와 NaviHelper 3.0.5·navi-data 3.0.4 소스를 직접 확인했습니다.
+
+- **앱 화면 안에 넣는 지도(MapView·지도 타일·마커/경로 그리기) API는 없습니다.** `placesense`는 내부 위치 서비스용 AIDL이고 지도와 관계없습니다.
+- 지도와 관련해 쓸 수 있는 것은 `NaviHelper.requestNavigationScreen(NavigationScreenRequest)` 하나입니다. 권한 `pleos.car.permission.NAVI_CUSTOM_MAP`(normal). Pleos 내비의 화면을 앞으로 띄웁니다.
+  - `OverviewRoute(RouteOverviewShowInfo(durationMs))`: 현재 경로 전체 보기
+  - `MoveToCurrentLocationOnMap`: 현재 위치 지도
+  - `SearchPlace(keyword)`, `POIDetailPopup(poiId)`, `NearbyChargingStations`, `RecentDestinations`, `EditRoute`, `RouteOptionList`, `FavoriteMain`, `Settings`, `Foreground`
+- 예전 NaviHelper 2.0.3에는 내비 지도에 번호 핀을 찍는 `Assistant.setNumberPins(NumberMarkerInfo)`와 모의주행 `requestSimulatedDrive`가 있었지만, 3.x에서 빠졌고 `NAVI_CUSTOM_ETC`(시스템 앱 전용) 권한이 필요해 우리 앱은 쓸 수 없습니다.
+- 따라서 **일행 차량 위치는 계속 앱 자체 화면에 그려야 합니다.** 실제 지도 배경이 필요하면 외부 지도 SDK(네이버·카카오·TMAP·Google 등)를 따로 붙여야 하며, Pleos 심사·네트워크·위치 정책을 확인해야 합니다.
+
+### 적용한 내용
+- `PleosNaviMap.kt`: NaviHelper 연결. 주행 화면 오른쪽 위 **지도 버튼**을 누르면
+  1. 이 모임 경로(버전)를 아직 내비에 보내지 않았으면 같은 목적지·경유지(최대 2개)를 `requestRouteWithWaypoints`로 보내고,
+  2. `onRouteStarted`가 오면 Pleos 내비의 **경로 전체 보기(10초)**를 엽니다.
+  3. 10초 안에 응답이 없거나 `onError`면 **현재 위치 지도**를 엽니다.
+  4. Pleos 기기가 아니면 안내 문구만 보여 주고 앱 개념도를 그대로 씁니다.
+- 매니페스트에 `NAVI_CUSTOM_MAP` 권한 추가.
+- `./gradlew :app:assembleDebug` 빌드 성공(JDK 17.0.21, Android SDK 34, build-tools 34.0.0).
+
+### 에뮬레이터 확인 (2026-11-10, Pleos Connect v2.1.0, 2560×1440)
+- 주행 화면 오른쪽 위 지도 버튼을 누르자 `requestRouteWithWaypoints`가 Pleos 내비에 전달됐습니다. **`poiId=""`(좌표만)로도 내비가 경로를 만듭니다.** 내비 로그: `OnRouteWithWaypointsRequest(destination=강릉 안목해변 37.7712,128.9487, waypoints=[횡성휴게소])`.
+- 약 8초 뒤 `onRouteStarted`(횡성휴게소까지 103km)가 왔고, 이어서 `requestNavigationScreen`이 보내졌습니다. Pleos 내비가 앞으로 나와 경유지 1개를 포함한 경로 후보(추천 3시간 9분, 210km)를 지도에 표시했습니다.
+- 같은 경로에서 버튼을 다시 누르면 경로를 다시 보내지 않고 `OverviewRoute(durationMs=10000)`만 보내며, 내비가 경로 전체 보기를 엽니다(`ShowRouteOverviewRequest`).
+- 내비 화면이 열리면 Pleos 홈이 우리 앱 창을 숨깁니다. 앱으로 돌아오려면 하단 바의 앱 아이콘을 누릅니다.
+- 부팅 직후에는 Pleos 내비가 스스로 앞으로 나와 앱을 가릴 수 있습니다.
+
+| 주행 화면(지도 버튼) | 경로 보낸 직후 | 다시 눌렀을 때(전체 보기) |
+|---|---|---|
+| ![](screenshots/navi-map-1-drive-button.png) | ![](screenshots/navi-map-2-route-sent.png) | ![](screenshots/navi-map-3-overview.png) |
