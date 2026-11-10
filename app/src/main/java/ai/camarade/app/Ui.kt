@@ -13,6 +13,13 @@ object Palette {
     val teal=Color.rgb(8,111,95); val dark=Color.rgb(18,66,55); val lime=Color.rgb(219,244,163)
     val line=Color.rgb(221,227,216); val soft=Color.rgb(233,240,229); val white=Color.WHITE
 }
+/**
+ * 화면 배율. 앱은 약 1024×620dp 화면 기준으로 만들었으므로, 그보다 큰 차량 화면(Pleos Connect 2560×1440, mdpi)에서는
+ * 전체를 같은 비율로 키운다. 작은 화면에서는 1(그대로), 최대 1.8배.
+ */
+fun uiScale(widthDp: Int, heightDp: Int): Float =
+    if(widthDp<=0 || heightDp<=0) 1f else minOf(widthDp/1024f,heightDp/620f).coerceIn(1f,1.8f)
+
 class Ui(val context: Context) {
     fun d(n: Int) = (n*context.resources.displayMetrics.density).toInt()
     fun box(color: Int=Palette.white, radius: Int=20, stroke: Boolean=false) = GradientDrawable().apply {
