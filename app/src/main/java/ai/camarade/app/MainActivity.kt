@@ -55,13 +55,28 @@ class MainActivity : Activity() {
         override fun call(recipient: String)=toast("통화 기능은 준비 중이에요.")
         override fun openPrivacy()=navigate("privacy")
         override fun toggleSound() {
-            if(speech?.ready!=true) toast("음성 엔진을 준비하고 있어요. 잠시 후 다시 눌러 주세요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
+            if(speech?.ready!=true) { toast("음성 엔진을 준비하고 있어요. 잠시 후 다시 눌러 주세요.");return }
+            // 켜고 끌 때 무엇이 바뀌는지 소리와 화면 알림으로 함께 설명함(끌 때는 꺼지기 전에 마지막으로 읽어 줌).
+            val explain=if(!sound) "음성 읽어주기를 켰어요. 일행이 보낸 메시지와 남은 거리를 소리로 읽어 드릴게요."
+                else "음성 읽어주기를 껐어요. 메시지는 화면 말풍선과 메시지 기록에서 볼 수 있어요."
+            speech?.stop();speech?.say(explain)
+            sound=!sound;render();toast(explain)
         }
         override fun finishTrip()=confirmFinish()
         override fun showHistory()=history()
         override fun cancelRest() { sim?.cancelStop("me") }
         override fun remainingKm(memberId: String)=sim?.remainingKm(memberId,System.currentTimeMillis())
         override fun progress(memberId: String)=sim?.progress(memberId,System.currentTimeMillis())
+    }
+    /**
+     * 큰 차량 화면에서 앱 전체(글자·버튼·아이콘·말풍선·지도 표시)를 같은 비율로 키움.
+     * 화면 밀도(densityDpi)만 올리므로 dp·sp로 정한 모든 크기가 함께 커지고, 요소 사이 비율은 그대로 유지된다.
+     */
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        val c=base.resources.configuration
+        val scale=uiScale(c.screenWidthDp,c.screenHeightDp)
+        if(scale>1.01f) applyOverrideConfiguration(Configuration().apply { densityDpi=(c.densityDpi*scale).toInt() })
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,7 +96,25 @@ class MainActivity : Activity() {
     override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();drivingState?.release();gateway.close();super.onDestroy() }
     @Deprecated("Legacy Android activity back handling")
     override fun onBackPressed() { if(driving) navigate("drive") else if(screen!="home") navigate("home") else super.onBackPressed() }
-    private fun toast(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
+    /**
+     * 화면 아래 알림. Pleos는 앱의 Toast를 화면에 띄우지 않아서(에뮬레이터에서 확인)
+     * "후기를 저장했어요" 같은 안내가 보이지 않았음. 앱이 직접 창 맨 위 층에 그린다.
+     * setContentView로 화면을 다시 그려도 남도록 decorView에 붙인다.
+     */
+    private var notice: TextView?=null
+    private val hideNotice=Runnable { notice?.animate()?.alpha(0f)?.translationY(ui.d(12).toFloat())?.setDuration(220)?.withEndAction { notice?.visibility=View.GONE }?.start() }
+    private fun toast(message: String) {
+        val v=notice ?: TextView(this).apply {
+            textSize=17f;setTextColor(Palette.white);gravity=Gravity.CENTER;background=ui.box(Palette.dark,16)
+            setPadding(ui.d(24),ui.d(14),ui.d(24),ui.d(14));maxWidth=ui.d(620);elevation=ui.d(8).toFloat()
+            accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE
+            (window.decorView as FrameLayout).addView(this,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=ui.d(28) })
+        }.also { notice=it }
+        v.text=message;v.visibility=View.VISIBLE;v.bringToFront()
+        v.animate().cancel();v.alpha=0f;v.translationY=ui.d(12).toFloat()
+        v.animate().alpha(1f).translationY(0f).setDuration(220).start()
+        v.removeCallbacks(hideNotice);v.postDelayed(hideNotice,3500)
+    }
     private fun say(message: String) { if(sound) speech?.say(message) }
     private fun update(next: Trip, after: String?=null): Boolean {
         val result=persistLive(trips,next,store::save)
@@ -377,7 +410,11 @@ class MainActivity : Activity() {
             val col=ui.col();col.addView(ui.text(value,25f,Palette.white,true));col.addView(ui.gap(8));col.addView(ui.text(label,12f,Palette.lime));ui.add(metrics,col,1f)
         };c.addView(metrics);content.addView(c);content.addView(ui.gap(15));content.addView(ui.chip("✓  모든 위치공유가 종료되었어요"));content.addView(ui.gap(20))
         val card=ui.card();card.addView(ui.text("오늘의 한 줄",19f,Palette.ink,true));card.addView(ui.gap(13))
-        val review=ui.edit("함께 달린 기분을 남겨보세요.",reviewDrafts[t.id] ?: r.review,true);review.filters=arrayOf(android.text.InputFilter.LengthFilter(500));watch(review) { reviewDrafts[t.id]=it };card.addView(review);card.addView(ui.gap(15));card.addView(ui.button("후기 저장",true) { if(mutate { it.review(review.text.toString()) }) toast("후기를 저장했어요.") });content.addView(card)
+        val review=ui.edit("함께 달린 기분을 남겨보세요.",reviewDrafts[t.id] ?: r.review,true);review.filters=arrayOf(android.text.InputFilter.LengthFilter(500));watch(review) { reviewDrafts[t.id]=it };card.addView(review);card.addView(ui.gap(15));card.addView(ui.button("후기 저장",true) {
+            // 저장하면 키보드를 닫고, 저장됐다는 알림을 화면에 띄움.
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(review.windowToken,0)
+            if(mutate { it.review(review.text.toString()) }) { reviewDrafts.remove(t.id);toast("후기를 저장했어요.") }
+        });content.addView(card)
         content.addView(ui.gap(15));content.addView(ui.button("새로운 동행 만들기") { navigate("create") })
         note("이 기록의 거리는 가상 속도 72km/h × 체험 시간으로 계산했습니다. 실제 차량의 주행거리가 아닙니다.")
     }
