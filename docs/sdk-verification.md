@@ -166,3 +166,22 @@ Pleos Maven 저장소의 모든 패키지(`NaviHelper`, `navi-data`, `Vehicle`, 
 | 주행 화면(지도 버튼) | 경로 보낸 직후 | 다시 눌렀을 때(전체 보기) |
 |---|---|---|
 | ![](screenshots/navi-map-1-drive-button.png) | ![](screenshots/navi-map-2-route-sent.png) | ![](screenshots/navi-map-3-overview.png) |
+
+## 주행 화면 실제 지도: OpenFreeMap (2026-11-10)
+
+- 주행 화면의 개념도를 **OpenFreeMap 실제 지도**로 바꿨습니다(`LiveMapView.kt`). Android 지도 라이브러리는 MapLibre 12.3.1을 씁니다. 13.x는 Kotlin 2.2 기반이라 이 프로젝트(Kotlin 2.0.21)와 맞지 않습니다.
+- OpenFreeMap: 무료, 가입·키 없음, 상업적 사용 가능, **출처 표기 필수**(지도 위쪽에 표시), 가동 보장(SLA) 없음, 길찾기·주소 검색 없음. https://openfreemap.org/
+- 지도 라벨은 한국어 이름(`name:ko`)을 먼저 쓰도록 바꿨습니다.
+- **경로 선은 그리지 않습니다.** 길 안내는 Pleos 내비가 맡습니다. 목적지·경유지 표시와 일행 차량만 지도에 올립니다.
+- 일행 위치는 아직 체험용입니다. 출발지(서울숲)→경유지→목적지를 잇는 보이지 않는 직선 위에서 시뮬레이션 진행률대로 움직입니다. 실제 좌표 수신은 서버 연결 단계에서 바꿉니다.
+- 지도 스타일을 불러오지 못하면(인터넷 없음 등) 예전 개념도로 돌아갑니다.
+- 네이티브 라이브러리는 `arm64-v8a`, `x86_64`만 넣습니다. 디버그 APK 약 56MB.
+
+### 에뮬레이터 확인
+- Pleos 홈의 2칸 분할 화면(우리 앱 + Pleos 내비)에서 지도와 차량 표시가 정상으로 나왔습니다. 분할 상태에서는 Pleos 내비 쪽 지도가 빈 화면으로 보였습니다(내비 앱 쪽 현상).
+- 프로필 메뉴 → 위치 보기: 지도가 그 차로 확대·이동하고 점선 원과 남은 거리를 보여 줍니다. 차를 계속 따라가지는 않습니다.
+- 에뮬레이터 앱은 Android 사용자 10에서 실행됩니다. 데이터 초기화는 `adb shell pm clear --user 10 ai.camarade.app.demo`.
+
+| 분할 화면에서 주행 지도 | 위치 보기(지수) |
+|---|---|
+| ![](screenshots/live-map-1-split.png) | ![](screenshots/live-map-2-focus.png) |

@@ -86,7 +86,7 @@ class MainActivity : Activity() {
     }
     override fun onSaveInstanceState(out: Bundle) { out.putString("selected",selectedId);out.putString("screen",screen);super.onSaveInstanceState(out) }
     override fun onConfigurationChanged(config: Configuration) { super.onConfigurationChanged(config);render() }
-    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();naviMap?.release();drivingState?.release();gateway.close();super.onDestroy() }
+    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();naviMap?.release();driveView?.release();drivingState?.release();gateway.close();super.onDestroy() }
     @Deprecated("Legacy Android activity back handling")
     override fun onBackPressed() { if(driving) navigate("drive") else if(screen!="home") navigate("home") else super.onBackPressed() }
     private fun toast(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }
@@ -131,7 +131,7 @@ class MainActivity : Activity() {
             if(live?.phase==Phase.DRIVING) { showDrive(live);return }
             screen=if(live?.phase==Phase.FINISHED) "record" else "trip"
         }
-        driveView=null
+        driveView?.release();driveView=null
         val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
         val wide=resources.configuration.screenWidthDp>=720
         val root=ui.col();root.setBackgroundColor(Palette.bg)
@@ -278,7 +278,7 @@ class MainActivity : Activity() {
         refresh("");dialog.show()
     }
     private fun showDrive(t: Trip) {
-        val v=driveView?.takeIf { it.tripId==t.id } ?: DriveScreen(this,ui,gateway,driveHost).also { driveView=it }
+        val v=driveView?.takeIf { it.tripId==t.id } ?: DriveScreen(this,ui,gateway,driveHost).also { driveView?.release();driveView=it }
         if(sim?.tripId!=t.id) sim=DriveSimulation(t,System.currentTimeMillis())
         v.bind(t,sound)
         if(v.parent==null) setContentView(v)

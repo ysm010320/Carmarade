@@ -116,7 +116,9 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
 
     var tripId=""; private set
     private var trip: Trip?=null
+    // 개념도는 실제 지도(OpenFreeMap)를 불러오지 못할 때를 위해 아래에 깔아 둠.
     private val map=DriveMapView(context,gateway,host)
+    private var live: LiveMapView?=LiveMapView(context,gateway,host) { post { dropLiveMap() } }
     private val row=LinearLayout(context)
     private val slots=linkedMapOf<String,LinearLayout>()
     private val avatars=mutableMapOf<String,TextView>()
@@ -134,6 +136,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     init {
         setBackgroundColor(Palette.bg)
         addView(map,LayoutParams(-1,-1))
+        live?.let { addView(it,LayoutParams(-1,-1)) }
         addView(ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted),
             LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18) })
         val quick=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
@@ -178,7 +181,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     }
 
     fun bind(t: Trip, soundOn: Boolean) {
-        trip=t;tripId=t.id;map.trip=t;map.invalidate()
+        trip=t;tripId=t.id;map.trip=t;map.invalidate();live?.trip=t
         soundButton.background=ui.box(if(soundOn) Palette.teal else Palette.white,16,true)
         soundButton.setColorFilter(if(soundOn) Palette.white else Palette.muted)
         soundButton.contentDescription=if(soundOn) "음성 읽어주기 켜짐" else "음성 읽어주기 꺼짐"
@@ -199,8 +202,12 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
             slots[id]=slot;avatars[id]=avatar
         }
     }
-    fun refresh() { map.invalidate() }
-    fun focus(id: String) { map.focus(id) }
+    fun refresh() { map.invalidate();live?.refresh() }
+    fun focus(id: String) { map.focus(id);live?.focus(id) }
+    /** 지도 자원 해제. 주행 화면을 버릴 때 부른다. */
+    fun release() { live?.release() }
+    /** 실제 지도를 불러오지 못하면 개념도로 돌아감. */
+    private fun dropLiveMap() { live?.let { removeView(it);it.release() };live=null }
 
     private fun nameOf(id: String)=when(id) { "all"->"모두";"me"->"나";else->trip?.members?.find { it.id==id }?.name ?: "멤버" }
     private fun paintAvatar(id: String, v: TextView, open: Boolean) {
@@ -346,7 +353,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         fun add(v: View, width: Int=-2) { content.addView(v,LinearLayout.LayoutParams(width,ui.d(56)).apply { marginEnd=ui.d(8) }) }
         add(menuButton(R.drawable.ic_phone,"통화",close { host.call(id) }))
         add(menuButton(R.drawable.ic_mic,"음성 메시지",close { host.voiceTo(id) }))
-        add(menuButton(R.drawable.ic_my_location,"위치 보기",close { map.focus(id) }))
+        add(menuButton(R.drawable.ic_my_location,"위치 보기",close { focus(id) }))
         if(id!="all") {
             add(icon(R.drawable.ic_coffee,"${nameOf(id)}에게 잠깐 쉬어가요",onClick=close { host.quick(REST_TEXT,id) }),ui.d(56))
             add(icon(R.drawable.ic_thumb_up,"${nameOf(id)}에게 잘 따라가고 있어요",onClick=close { host.quick(OK_TEXT,id) }),ui.d(56))
