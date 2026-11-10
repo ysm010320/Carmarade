@@ -6,6 +6,8 @@
     <!-- Pleos SDK 점검 화면(SdkCheckActivity)에서 쓰는 권한 -->
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE" />
     <uses-permission android:name="pleos.car.permission.NAVI_ROUTE_SEARCH" />
+    <!-- Pleos 내비 지도 화면 열기(NaviHelper.requestNavigationScreen). 보호 수준 normal -->
+    <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_MAP" />
     <uses-permission android:name="pleos.car.permission.CAR_DRIVE" />
     <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
     <uses-permission android:name="pleos.car.permission.STT_SERVICE" />

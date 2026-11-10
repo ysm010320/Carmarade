@@ -33,6 +33,8 @@ class MainActivity : Activity() {
     // 음성 읽어주기(Pleos TTS 우선, 안 되면 Android TTS)와 주행 중 제한 상태.
     private var speech: SpeechOut?=null
     private var drivingState: DrivingState?=null
+    // Pleos 내비 지도 화면 열기(앱 안에 넣는 지도 API는 Pleos에 없음).
+    private var naviMap: PleosNaviMap?=null
     private var moving=false
     private var sound=false
     private lateinit var content: LinearLayout
@@ -54,6 +56,11 @@ class MainActivity : Activity() {
         override fun voiceTo(recipient: String) { target=recipient;voice() }
         override fun call(recipient: String)=toast("통화 기능은 준비 중이에요.")
         override fun openPrivacy()=navigate("privacy")
+        override fun openNaviMap() {
+            val t=trips.find { it.phase==Phase.DRIVING } ?: return
+            val m=naviMap ?: return toast("Pleos 내비를 쓸 수 없는 기기예요.")
+            m.showRoute(t.id,t.route) { toast(it) }
+        }
         override fun toggleSound() {
             if(speech?.ready!=true) toast("음성 엔진을 준비하고 있어요. 잠시 후 다시 눌러 주세요.") else { sound=!sound;render();if(sound) say("카마라드 음성 안내를 시작합니다.") }
         }
@@ -71,6 +78,7 @@ class MainActivity : Activity() {
         screen=savedInstanceState?.getString("screen") ?: "home"
         trips.find { it.phase==Phase.DRIVING }?.let { selectedId=it.id;screen="drive" }
         speech=SpeechOut(this) { }
+        naviMap=PleosNaviMap(this)
         // 차가 움직이면(주행 최적화 필요) 주행 화면·위치공유 설정만 보여 줌.
         drivingState=DrivingState.attach(this) { m -> moving=m;render() }
         moving=drivingState?.restricted ?: false
@@ -78,7 +86,7 @@ class MainActivity : Activity() {
     }
     override fun onSaveInstanceState(out: Bundle) { out.putString("selected",selectedId);out.putString("screen",screen);super.onSaveInstanceState(out) }
     override fun onConfigurationChanged(config: Configuration) { super.onConfigurationChanged(config);render() }
-    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();drivingState?.release();gateway.close();super.onDestroy() }
+    override fun onDestroy() { ticker.removeCallbacks(tick);speech?.release();naviMap?.release();drivingState?.release();gateway.close();super.onDestroy() }
     @Deprecated("Legacy Android activity back handling")
     override fun onBackPressed() { if(driving) navigate("drive") else if(screen!="home") navigate("home") else super.onBackPressed() }
     private fun toast(message: String) { Toast.makeText(this,message,Toast.LENGTH_LONG).show() }

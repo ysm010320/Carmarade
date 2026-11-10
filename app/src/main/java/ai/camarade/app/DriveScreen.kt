@@ -102,6 +102,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         fun voiceTo(recipient: String)
         fun call(recipient: String)
         fun openPrivacy()
+        /** Pleos 내비 지도에서 모임 경로 전체 보기. */
+        fun openNaviMap()
         fun toggleSound()
         fun finishTrip()
         fun showHistory()
@@ -150,7 +152,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         quick.addView(restButton);quick.addView(space());quick.addView(okButton)
         addView(quick,LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply { setMargins(ui.d(16),ui.d(16),0,0) })
         val side=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
-        side.addView(icon(R.drawable.ic_pin,"위치공유 설정") { host.openPrivacy() })
+        side.addView(icon(R.drawable.ic_map,"Pleos 내비 지도에서 경로 보기") { host.openNaviMap() })
+        side.addView(space());side.addView(icon(R.drawable.ic_pin,"위치공유 설정") { host.openPrivacy() })
         soundButton=icon(R.drawable.ic_voice,"음성 읽어주기") { host.toggleSound() }
         side.addView(space());side.addView(soundButton)
         side.addView(space());side.addView(icon(R.drawable.ic_flag,"주행 종료",Color.rgb(163,45,45)) { host.finishTrip() })
