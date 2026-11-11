@@ -111,6 +111,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         fun cancelRest()
         fun remainingKm(memberId: String): Double?
         fun progress(memberId: String): Double?
+        /** 온라인 방에서 서버로 받은 실제 위치. 체험 모드면 null(진행률로 위치를 정함). */
+        fun livePosition(memberId: String): LivePoint?=null
     }
     private class Shown(val view: View, val restOwner: String?, val seq: Long, val expire: Runnable?)
 
@@ -119,6 +121,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     // 개념도는 실제 지도(OpenFreeMap)를 불러오지 못할 때를 위해 아래에 깔아 둠.
     private val map=DriveMapView(context,gateway,host)
     private var live: LiveMapView?=LiveMapView(context,gateway,host) { post { dropLiveMap() } }
+    private val statusChip=ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted)
     private val row=LinearLayout(context)
     private val slots=linkedMapOf<String,LinearLayout>()
     private val avatars=mutableMapOf<String,TextView>()
@@ -137,8 +140,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         setBackgroundColor(Palette.bg)
         addView(map,LayoutParams(-1,-1))
         live?.let { addView(it,LayoutParams(-1,-1)) }
-        addView(ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted),
-            LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18) })
+        addView(statusChip,LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18) })
         val quick=LinearLayout(context).apply { orientation=LinearLayout.HORIZONTAL }
         // 모두에게 보내는 빠른 메시지는 말풍선 대신 버튼으로 보냈음을 표시함.
         // 쉬어가요: 누르면 켜짐(모두에게 보냄), 다시 누르면 꺼짐(쉬어가기 취소). 정차하면 저절로 꺼짐.
@@ -203,6 +205,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         }
     }
     fun refresh() { map.invalidate();live?.refresh() }
+    /** 위쪽 가운데 상태 표시(체험 모드 안내, 온라인 방 연결 상태). */
+    fun status(text: String) { if(statusChip.text!=text) statusChip.text=text }
     fun focus(id: String) { map.focus(id);live?.focus(id) }
     /** 지도 자원 해제. 주행 화면을 버릴 때 부른다. */
     fun release() { live?.release() }

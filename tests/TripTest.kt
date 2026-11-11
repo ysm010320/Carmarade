@@ -101,5 +101,27 @@ fun main() {
         val result=persistLive(listOf(next),next) { stored=it }
         check(result.saved && result.error==null && stored==listOf(next))
     }
+    test("online room keeps me first and syncs other members from the server") {
+        val t = fresh().copy(roomId = "r_1", roomCode = "ABC234")
+        check(t.online && t.inviteCode == "ABC234")
+        val synced = t.syncMembers(listOf(Member("u_a", "지수", "IONIQ 5", acceptedVersion = 1), Member("u_b", "하늘", "AVANTE")))
+        check(synced.members.map { it.id } == listOf("me", "u_a", "u_b"))
+        check(synced.syncMembers(listOf(Member("u_b", "하늘", "EV6"))).members.map { it.car } == listOf("내 차량", "EV6"))
+        check(t.syncMembers(List(6) { Member("u_$it", "m$it", "car") }).members.size == 5)
+    }
+    test("online room starts once I accept, members accept on their own cars") {
+        val t = fresh().copy(roomId = "r_1").syncMembers(listOf(Member("u_a", "지수", "IONIQ 5")))
+        rejects { t.start("me", 2000) }
+        check(t.acceptRoute("me", t.route.version).start("me", 2000).phase == Phase.DRIVING)
+        rejects { fresh().addMember("me", "ji", "지수", "car").acceptRoute("me", 1).start("me", 2000) }
+    }
+    test("host route change from the server needs my acceptance again, ignored after departure") {
+        val t = fresh().copy(roomId = "r_1").let { it.acceptRoute("me", it.route.version) }
+        check(t.applyRemoteRoute(sea, emptyList()) == t)
+        val moved = t.applyRemoteRoute(sea, listOf(rest))
+        check(moved.route.version == 2 && moved.route.waypoints == listOf(rest) && !moved.members.first().accepted(moved.route))
+        val driving = t.start("me", 2000)
+        check(driving.applyRemoteRoute(rest, emptyList()) == driving)
+    }
     println("$passed behavior tests passed")
 }
