@@ -21,7 +21,7 @@ import org.maplibre.android.style.layers.SymbolLayer
 /**
  * 주행 화면의 실제 지도. OpenFreeMap 타일을 MapLibre로 그리고, 그 위에 경유지·목적지와 일행 차량을 표시한다.
  * 경로 선은 그리지 않는다(길 안내는 Pleos 내비가 맡음).
- * 일행 위치는 아직 체험용 시뮬레이션(경로 위 진행률)이며, 실제 좌표 수신은 서버 연결 후 바꾼다.
+ * 온라인 방이면 서버로 받은 실제 위치를, 체험 모드면 가상 진행률 위치를 그린다.
  * 지도 스타일을 불러오지 못하면 [onFailed]로 알려 개념도로 돌아가게 한다.
  */
 @SuppressLint("ViewConstructor")
@@ -87,7 +87,7 @@ class LiveMapView(context: Context, private val gateway: VehicleGateway, private
                 runCatching { layer.setProperties(PropertyFactory.textField(Expression.coalesce(Expression.get("name:ko"),Expression.get("name")))) }
         }
     }
-    private fun spot(id: String): GeoPoint?=host.progress(id)?.let { p -> line?.pointAt(p) }
+    private fun spot(id: String): GeoPoint?=host.livePosition(id)?.point ?: host.progress(id)?.let { p -> line?.pointAt(p) }
 
     /** 지도 위에 그리는 장소 표시·차량·강조 원·출처 표기. 기존 개념도와 같은 모양을 쓴다. */
     private inner class Overlay : View(context) {
@@ -108,10 +108,17 @@ class LiveMapView(context: Context, private val gateway: VehicleGateway, private
             p.style=Paint.Style.FILL;p.color=Palette.teal;c.drawCircle(dest.x,dest.y,9*s,p)
             label(c,t.route.destination.name,dest.x+14*s,dest.y+5*s,15f,Palette.ink,s)
             // 차량. 앞서가는 차가 위에 오도록 뒤처진 차부터 그림.
+            // 온라인 방이면 서버에서 받은 실제 위치, 체험 모드면 가상 진행률 위치.
             val spots=mutableMapOf<String,PointF>()
-            t.members.mapIndexedNotNull { i,mem -> host.progress(mem.id)?.let { Triple(i,mem,it) } }.sortedBy { it.third }.forEach { (i,mem,prog) ->
-                if(mem.id!="me" && visiblePosition(mem.sharing,gateway.position(i,now),now)==null) return@forEach
-                val pt=screen(line?.pointAt(prog) ?: return@forEach);spots[mem.id]=pt;drawCarMarker(c,p,mem,pt.x,pt.y,s)
+            t.members.mapIndexedNotNull { i,mem ->
+                val live=host.livePosition(mem.id)
+                when {
+                    live!=null -> Triple(mem.copy(sharing=if(live.approximate) Sharing.APPROXIMATE else Sharing.EXACT),live.point,host.remainingKm(mem.id) ?: 0.0)
+                    mem.id!="me" && visiblePosition(mem.sharing,gateway.position(i,now),now)==null -> null
+                    else -> host.progress(mem.id)?.let { prog -> line?.pointAt(prog)?.let { Triple(mem,it,1-prog) } }
+                }
+            }.sortedByDescending { it.third }.forEach { (mem,geo,_) ->
+                val pt=screen(geo);spots[mem.id]=pt;drawCarMarker(c,p,mem,pt.x,pt.y,s)
             }
             drawFocus(c,t,spots,now,s)
             // 출처 표기(OpenFreeMap 이용 조건)

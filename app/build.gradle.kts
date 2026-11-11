@@ -25,4 +25,6 @@ dependencies {
     implementation("ai.pleos.playground:TextToSpeech:3.3.1")
     // 주행 화면 지도. OpenFreeMap 타일(무료, 키 없음)을 그린다. 13.x는 Kotlin 2.2 기반이라 12.x 사용.
     implementation("org.maplibre.gl:android-sdk:12.3.1")
+    // 방 서버 REST·WebSocket. MapLibre가 쓰는 것과 같은 버전.
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

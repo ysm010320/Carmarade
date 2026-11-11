@@ -13,9 +13,9 @@
     <uses-permission android:name="pleos.car.permission.STT_SERVICE" />
     <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- 주행 화면 지도 타일(OpenFreeMap) 받기 -->
+    <!-- 주행 화면 지도 타일(OpenFreeMap)과 방 서버(초대 코드·위치 공유) 연결 -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:label="카마라드 체험" android:icon="@drawable/ic_camarade" android:theme="@style/AppTheme" android:allowBackup="false" android:supportsRtl="true">
+    <application android:label="카마라드 체험" android:icon="@drawable/ic_camarade" android:theme="@style/AppTheme" android:allowBackup="false" android:supportsRtl="true" android:networkSecurityConfig="@xml/network_security_config">
         <activity android:name="ai.camarade.app.MainActivity" android:exported="true" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|keyboard|keyboardHidden|navigation|locale|layoutDirection|fontScale" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
             <!-- 주행 중에도 화면을 띄움. 차가 움직이면 앱이 직접 주행 화면·위치공유 설정만 보여 준다(DrivingState). -->

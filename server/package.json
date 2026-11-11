@@ -1,0 +1,16 @@
+{
+  "name": "carmarade-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Carmarade room server: users, rooms with invite codes, same-destination search, live location sharing.",
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test \"test/*.test.js\"",
+    "fake-member": "node tools/fake-member.js"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}
