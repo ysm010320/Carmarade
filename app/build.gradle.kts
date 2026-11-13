@@ -11,7 +11,11 @@ android {
         versionName = "0.1.0-demo"
         // 지도(MapLibre) 네이티브 라이브러리는 실차(arm64)와 에뮬레이터(x86_64)용만 넣어 APK 크기를 줄임.
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+        // 방 서버 기본 주소. 배포 서버로 빌드할 때: ./gradlew assembleRelease -Pcarmarade.serverUrl=https://rooms.example.com
+        val serverUrl = (project.findProperty("carmarade.serverUrl") as String?) ?: "http://10.0.2.2:8787"
+        buildConfigField("String", "SERVER_URL", "\"$serverUrl\"")
     }
+    buildFeatures { buildConfig = true }
     sourceSets["main"].java.srcDirs("src/main/java", "../core")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

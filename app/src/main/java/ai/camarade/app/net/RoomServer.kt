@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import ai.camarade.core.*
+import ai.camarade.app.BuildConfig
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -12,7 +13,8 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-data class RemoteMember(val id: String, val name: String, val car: String, val role: String)
+/** [phase]: "planning"(출발 전) · "driving"(출발함) · "arrived"(도착). [accepted]: 최신 경로를 수락했는지. */
+data class RemoteMember(val id: String, val name: String, val car: String, val role: String, val accepted: Boolean=false, val phase: String="planning")
 data class RemoteRoom(
     val id: String, val title: String, val kind: String, val visibility: String,
     val destination: Place, val waypoints: List<Place>,
@@ -90,6 +92,9 @@ class RoomServer(context: Context) {
     fun setRoute(roomId: String, route: RoutePlan, done: (Result<RemoteRoom>) -> Unit) =
         call("POST","/v1/rooms/$roomId/route",JSONObject().put("destination",place(route.destination))
             .put("waypoints",JSONArray(route.waypoints.map(::place))),done=done) { room(it.getJSONObject("room")) }
+    /** 내 상태 알리기. [accepted]: 최신 경로 수락, [phase]: "planning" · "driving" · "arrived". */
+    fun setStatus(roomId: String, accepted: Boolean?=null, phase: String?=null, done: (Result<RemoteRoom>) -> Unit={}) =
+        call("POST","/v1/rooms/$roomId/status",JSONObject().apply { accepted?.let { put("accepted",it) };phase?.let { put("phase",it) } },done=done) { room(it.getJSONObject("room")) }
     fun leave(roomId: String, done: (Result<Unit>) -> Unit) = call("POST","/v1/rooms/$roomId/leave",JSONObject(),done=done) { }
 
     fun live(roomId: String, events: LiveEvents): LiveLink = LiveLink(roomId,events).also { it.open() }
@@ -125,7 +130,7 @@ class RoomServer(context: Context) {
         val id=j.optString("placeId","").ifEmpty { "srv_%.4f_%.4f".format(java.util.Locale.ROOT,lat,lon) }
         return Place(id,j.getString("name"),lat,lon)
     }
-    private fun members(a: JSONArray?)=(0 until (a?.length() ?: 0)).map { a!!.getJSONObject(it).let { m -> RemoteMember(m.getString("id"),m.getString("name"),m.getString("car"),m.optString("role","member")) } }
+    private fun members(a: JSONArray?)=(0 until (a?.length() ?: 0)).map { a!!.getJSONObject(it).let { m -> RemoteMember(m.getString("id"),m.getString("name"),m.getString("car"),m.optString("role","member"),m.optBoolean("accepted",false),m.optString("phase","planning")) } }
     private fun room(j: JSONObject): RemoteRoom {
         val w=j.optJSONArray("waypoints") ?: JSONArray()
         val ms=members(j.optJSONArray("members"))
@@ -198,7 +203,7 @@ class RoomServer(context: Context) {
     }
 
     companion object {
-        /** 에뮬레이터에서 이 PC의 서버(127.0.0.1:8787)로 가는 주소. */
-        const val DEFAULT_URL="http://10.0.2.2:8787"
+        /** 빌드할 때 정한 기본 주소(-Pcarmarade.serverUrl). 정하지 않으면 에뮬레이터에서 이 PC의 서버로 가는 http://10.0.2.2:8787. */
+        val DEFAULT_URL: String=BuildConfig.SERVER_URL
     }
 }

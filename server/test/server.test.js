@@ -248,6 +248,38 @@ test('커뮤니티: 모집 중인 공개 방만, 출발 시간이 가까운 순�
   assert.equal((await api('POST', '/v1/rooms', { token: host.token, body: { title: 'x', destination: GANGNEUNG, note: 'ㅋ'.repeat(201) } })).status, 400);
 });
 
+test('멤버 상태: 수락·출발·도착이 바로 전해지고, 경로가 바뀌면 수락이 풀리고, 도착하면 위치가 지워짐', async () => {
+  const a = await signup('status-host'); const b = await signup('status-member');
+  const room = await makeRoom(a.token);
+  await api('POST', '/v1/join', { token: b.token, body: { code: room.inviteCode } });
+  const wa = await connect(a.token); const wb = await connect(b.token);
+  for (const w of [wa, wb]) { w.send2({ type: 'subscribe', roomId: room.id }); await w.next((m) => m.type === 'snapshot'); }
+  const mine = (ms, id) => ms.members.find((m) => m.id === id);
+
+  assert.equal((await api('POST', `/v1/rooms/${room.id}/status`, { token: b.token, body: { accepted: true } })).status, 200);
+  let pushed = await wa.next((m) => m.type === 'members');
+  assert.deepEqual([mine(pushed, b.user.id).accepted, mine(pushed, b.user.id).phase], [true, 'planning']);
+
+  // 방장이 경로를 바꾸면 모두 다시 수락해야 함
+  await api('POST', `/v1/rooms/${room.id}/route`, { token: a.token, body: { destination: HOENGSEONG } });
+  pushed = await wa.next((m) => m.type === 'members');
+  assert.equal(mine(pushed, b.user.id).accepted, false);
+
+  await api('POST', `/v1/rooms/${room.id}/status`, { token: b.token, body: { accepted: true, phase: 'driving' } });
+  pushed = await wa.next((m) => m.type === 'members' && mine(m, b.user.id).phase === 'driving');
+  assert.equal(mine(pushed, b.user.id).accepted, true);
+
+  wb.send2({ type: 'location', roomId: room.id, lat: 37.6, lon: 128.5, sharing: 'exact' });
+  await wa.next((m) => m.type === 'location');
+  await api('POST', `/v1/rooms/${room.id}/status`, { token: b.token, body: { phase: 'arrived' } });
+  assert.equal((await wa.next((m) => m.type === 'location-removed')).userId, b.user.id);
+
+  assert.equal((await api('POST', `/v1/rooms/${room.id}/status`, { token: b.token, body: { phase: 'flying' } })).status, 400);
+  const outsider = await signup('status-outsider');
+  assert.equal((await api('POST', `/v1/rooms/${room.id}/status`, { token: outsider.token, body: { accepted: true } })).status, 403);
+  wa.close(); wb.close();
+});
+
 test('토큰 없는 실시간 연결은 거절', async () => {
   await assert.rejects(new Promise((resolve, reject) => {
     const ws = new WebSocket(wsBase); ws.on('open', resolve); ws.on('error', reject);

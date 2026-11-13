@@ -104,7 +104,7 @@ class MainActivity : Activity() {
         screen=savedInstanceState?.getString("screen") ?: "home"
         trips.find { it.phase==Phase.DRIVING }?.let { selectedId=it.id;screen="drive" }
         speech=SpeechOut(this) { }
-        naviMap=PleosNaviMap(this)
+        naviMap=PleosNaviMap(this).also { it.onArrived={ trips.find { t -> t.phase==Phase.DRIVING }?.let { t -> arrive(t) } } }
         // 차가 움직이면(주행 최적화 필요) 주행 화면·위치공유 설정만 보여 줌.
         drivingState=DrivingState.attach(this) { m -> moving=m;render() }
         moving=drivingState?.restricted ?: false
@@ -159,6 +159,8 @@ class MainActivity : Activity() {
             screen=if(live?.phase==Phase.FINISHED) "record" else "trip"
         }
         driveView?.release();driveView=null
+        // 출발 전 화면에서 보던 방이 아니면 실시간 연결을 닫음(주행 중인 온라인 방은 유지).
+        if(link!=null && onlineDriving==null && !(screen=="trip" && current?.id==linkTripId)) stopLive()
         val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
         val wide=resources.configuration.screenWidthDp>=720
         val root=ui.col();root.setBackgroundColor(Palette.bg)
@@ -290,6 +292,8 @@ class MainActivity : Activity() {
         val t=current
         if(t==null || t.phase==Phase.FINISHED) { title("LET'S GO","새로운 동행을 준비해요");content.addView(ui.button("모임 만들기",true) { navigate("create") });return }
         if(t.phase==Phase.DRIVING) { screen="drive";content.post { render() };return }
+        // 온라인 방은 출발 전에도 실시간 연결: 새 멤버·수락·경로 변경이 바로 보인다.
+        if(t.online) connectRoom(t)
         title("PLAN TOGETHER",t.name,if(t.online) "온라인 방 · 같은 방 멤버는 각자 자기 차에서 수락하고 출발해요." else "공통 목적지와 경유지를 확인하고, 각자 수락해요.")
         // 온라인 방은 방장만 경로를 바꾸고, 바꾸면 서버를 거쳐 멤버에게 전해진다.
         val canEdit=!t.online || t.roomHost
@@ -315,7 +319,8 @@ class MainActivity : Activity() {
         t.members.forEach { m ->
             val role=when { m.id=="me" && t.online -> if(t.roomHost) " · 방장" else "";m.id=="me" -> " · 호스트";t.online -> if(m.id==t.roomHostId) " · 방장" else " · 멤버";else -> " · 가상 멤버" }
             val r=ui.card(padding=16);val line=ui.row();ui.add(line,ui.text("${m.name}$role",17f,Palette.ink,true),1f)
-            line.addView(ui.chip(if(t.online && m.id!="me") "참여 중" else if(m.accepted(t.route)) "수락 완료" else "확인 대기"));r.addView(line);r.addView(ui.gap(7));r.addView(ui.text(m.car,13f,Palette.muted));content.addView(r);content.addView(ui.gap(8))
+            line.addView(ui.chip(when { t.online && m.id!="me" && memberPhase[m.id]=="arrived" -> "도착";t.online && m.id!="me" && memberPhase[m.id]=="driving" -> "출발함"
+                m.accepted(t.route) -> "수락 완료";else -> "확인 대기" }));r.addView(line);r.addView(ui.gap(7));r.addView(ui.text(m.car,13f,Palette.muted));content.addView(r);content.addView(ui.gap(8))
         }
         val controls=ui.row();ui.add(controls,ui.button("초대 코드 보기") { invite(t) },1f,margin=3)
         if(t.online) ui.add(controls,ui.button("새로고침") { refreshRoom(t) },1f,margin=3)
@@ -331,15 +336,19 @@ class MainActivity : Activity() {
         if(!t.members.first().accepted(t.route)) {
             content.addView(ui.button("이 경로 수락하기",true) {
                 gateway.acceptRoute(t.route) { result -> when(result) {
-                    is NavigationResult.Simulated -> { if(mutate { it.acceptRoute("me",result.version) }) toast("체험 경로를 수락했어요. 실제 내비게이션은 실행되지 않습니다.") }
+                    is NavigationResult.Simulated -> { if(mutate { it.acceptRoute("me",result.version) }) {
+                        if(t.online) { server.setStatus(t.roomId!!,accepted=true);toast("경로를 수락했어요. 일행에게도 알렸어요.") }
+                        else toast("체험 경로를 수락했어요. 실제 내비게이션은 실행되지 않습니다.") } }
                     is NavigationResult.Applied -> mutate { it.acceptRoute("me",result.version) }
                     is NavigationResult.Unavailable -> toast(result.reason)
                 } }
             });content.addView(ui.gap(10))
         }
-        content.addView(ui.button(if(t.online) "출발하기  →" else "동행 주행 체험 시작  →",true) { mutate("drive") { it.start("me",System.currentTimeMillis()) } })
+        content.addView(ui.button(if(t.online) "출발하기  →" else "동행 주행 체험 시작  →",true) {
+            if(mutate("drive") { it.start("me",System.currentTimeMillis()) } && t.online) server.setStatus(t.roomId!!,phase="driving")
+        })
         if(t.online) { content.addView(ui.gap(10));content.addView(ui.button("방 나가기") { confirmLeave(t) }) }
-        note(if(t.online) "출발하면 같은 방 멤버에게 내 위치를 보낼지 물어봐요. 실제 길 안내는 각 차량의 내비게이션이 맡아요."
+        note(if(t.online) (if(linkConnected) "실시간으로 연결돼 있어요. " else "방에 연결하는 중이에요. ")+"출발하면 같은 방 멤버에게 내 위치를 보낼지 물어봐요. 목적지에 도착하면 위치 공유가 자동으로 꺼져요."
             else "모두 수락하면 출발할 수 있어요. 실제 주행에서는 각 차량의 내비게이션이 경로를 계산합니다.")
     }
     private fun invite(t: Trip) {
@@ -419,11 +428,13 @@ class MainActivity : Activity() {
     }
     private fun confirmFinish() {
         AlertDialog.Builder(this).setTitle("이번 동행을 마칠까요?").setMessage("모든 위치공유가 종료되고 주행 체험 기록이 남아요.")
-            .setPositiveButton("종료하기") { _,_-> action {
-                val latest=current ?: return@action;val now=System.currentTimeMillis();val distance=((now-latest.startedAt!!).coerceAtLeast(0)/1000.0)*0.02
-                if(latest.online) stopLive()
-                if(update(latest.finish("me",now,distance),"record")) say("동행이 종료되었습니다. 위치 공유를 껐어요.")
-            } }.setNegativeButton("계속 달리기",null).show()
+            .setPositiveButton("종료하기") { _,_-> finishTrip() }.setNegativeButton("계속 달리기",null).show()
+    }
+    private fun finishTrip() = action {
+        val latest=trips.find { it.phase==Phase.DRIVING } ?: return@action;val now=System.currentTimeMillis();val distance=((now-latest.startedAt!!).coerceAtLeast(0)/1000.0)*0.02
+        selectedId=latest.id
+        if(latest.online) { server.setStatus(latest.roomId!!,phase="arrived");stopLive() }
+        if(update(latest.finish("me",now,distance),"record")) say("동행이 종료되었습니다. 위치 공유를 껐어요.")
     }
     /** 내가 보낸 메시지는 말풍선으로만 보여 주고 소리로 다시 읽지 않음. */
     private fun send(text: String, recipient: String=target, mode: InputMode=InputMode.PRESET) {
@@ -641,8 +652,11 @@ class MainActivity : Activity() {
             dialog.show()
         },{ e -> toast(e.message ?: "방을 찾지 못했어요.") }) }
     }
-    private fun remoteOthers(members: List<RemoteMember>, version: Int)=
-        members.filter { it.id!=server.userId }.map { Member(it.id,it.name.take(24),it.car.take(24),acceptedVersion=version) }
+    /** 서버 멤버 → 이 기기의 멤버. 수락 여부는 서버 값, 진행 단계는 [memberPhase]에 기억. */
+    private fun remoteOthers(members: List<RemoteMember>, version: Int): List<Member> {
+        members.forEach { memberPhase[it.id]=it.phase }
+        return members.filter { it.id!=server.userId }.map { Member(it.id,it.name.take(24),it.car.take(24),acceptedVersion=if(it.accepted) version else 0) }
+    }
     /** 서버 방을 이 기기의 모임으로. 이미 있으면 경로·멤버만 맞춤. */
     private fun onJoined(room: RemoteRoom, announce: Boolean) = action {
         val existing=trips.find { it.roomId==room.id }
@@ -677,24 +691,54 @@ class MainActivity : Activity() {
     }
     private fun syncRemote(tripId: String, members: List<RemoteMember>) {
         val t=trips.find { it.id==tripId } ?: return
+        // 주행 중 일행이 도착하면 말풍선과 음성으로 알림.
+        if(t.phase==Phase.DRIVING) members.filter { it.id!=server.userId && it.phase=="arrived" && memberPhase[it.id]!="arrived" }.forEach { m ->
+            driveView?.showDistance(m.id,"도착");say("${m.name}님이 도착했어요.")
+        }
         val hostId=members.find { it.role=="host" }?.id
+        val phaseChanged=members.any { memberPhase[it.id]!=it.phase }
         val next=t.syncMembers(remoteOthers(members,t.route.version)).copy(roomHost=hostId==server.userId,roomHostId=hostId)
         if(next!=t) action { update(next) }
+        // 출발·도착은 모임 데이터가 아니라 화면 표시만 바뀌므로 출발 전 화면을 다시 그림.
+        else if(phaseChanged && screen=="trip" && driveView==null && !moving) render()
     }
     private var locationAsked=false
-    /** 주행 화면에 들어오면 방에 실시간 연결. 내 위치는 공유를 켰을 때만 보낸다. */
-    private fun startLive(t: Trip) {
+    private var sharingAskedFor: String?=null
+    private val memberPhase=mutableMapOf<String,String>()
+    /** 방에 실시간 연결(멤버·경로·상태 변경을 바로 받음). 출발 전 화면과 주행 화면에서 쓴다. */
+    private fun connectRoom(t: Trip) {
         if(linkTripId==t.id && link!=null) return
         stopLive()
         linkTripId=t.id;lastSentAt=0;lastSentMode=null;locationAsked=false
         link=server.live(t.roomId!!,liveEvents(t.id))
+    }
+    /** 주행 화면: 방에 연결하고, 처음 한 번 위치 공유를 물음. 내 위치는 공유를 켰을 때만 보낸다. */
+    private fun startLive(t: Trip) {
+        connectRoom(t)
+        if(sharingAskedFor==t.id || arrivedTripId==t.id) return
+        sharingAskedFor=t.id
         if(t.members.first().sharing==Sharing.OFF) AlertDialog.Builder(this).setTitle("일행에게 내 위치를 보여 줄까요?")
             .setMessage("같은 방 멤버에게만 보여요. 동행을 마치면 바로 꺼지고 서버에서도 지워져요. 나중에 ‘위치공유 설정’에서 바꿀 수 있어요.")
             .setPositiveButton("정확한 위치") { _,_ -> mutate { it.setSharing("me",Sharing.EXACT) } }
             .setNeutralButton("대략적인 위치") { _,_ -> mutate { it.setSharing("me",Sharing.APPROXIMATE) } }
             .setNegativeButton("나중에",null).show()
     }
+    private var arrivedTripId: String?=null
+    /** 목적지 도착(Pleos 내비 도착 이벤트 또는 목적지 300m 안): 위치 공유를 끄고 서버에서도 지운 뒤, 동행을 마칠지 묻는다. */
+    private fun arrive(t: Trip) {
+        if(arrivedTripId==t.id || t.phase!=Phase.DRIVING) return
+        arrivedTripId=t.id
+        myLocation?.stop();myLocation=null
+        if(t.members.first().sharing!=Sharing.OFF) action { update(t.setSharing("me",Sharing.OFF)) }
+        trips.find { it.id==t.id }?.let { maybeSendLocation(it) }
+        if(t.online) server.setStatus(t.roomId!!,phase="arrived")
+        driveView?.status("도착 · 위치 공유를 껐어요")
+        say("목적지에 도착했어요. 위치 공유를 껐어요.")
+        AlertDialog.Builder(this).setTitle("목적지에 도착했어요").setMessage("위치 공유를 자동으로 껐어요. 이번 동행을 마칠까요?")
+            .setPositiveButton("동행 마치기") { _,_ -> finishTrip() }.setNegativeButton("일행 기다리기",null).show()
+    }
     private fun stopLive() {
+        sharingAskedFor=null
         link?.close();link=null;linkTripId=null;linkConnected=false
         livePositions.clear();liveLastKm.clear()
         myLocation?.stop();myLocation=null;myFix=null;myHeading=null
@@ -705,6 +749,7 @@ class MainActivity : Activity() {
             linkConnected=connected
             if(connected) { lastSentAt=0;lastSentMode=null }
             trip()?.let { driveView?.status(if(connected) "온라인 방 · ${it.inviteCode} · 연결됨" else "온라인 방 · 다시 연결하는 중…") }
+            if(driveView==null && screen=="trip" && !moving) render()
         }
         override fun onSnapshot(members: List<RemoteMember>, locations: List<RemoteLocation>) {
             syncRemote(tripId,members);livePositions.clear();locations.forEach { onLocation(it) }
@@ -762,7 +807,14 @@ class MainActivity : Activity() {
                 .setPositiveButton("계속") { _,_ -> requestPermissions(arrayOf(MyLocation.PERMISSION),61) }.setNegativeButton("나중에",null).show()
             return
         }
-        val l=myLocation ?: MyLocation(this) { p,h -> myFix=p;myHeading=h;onlineDriving?.let { maybeSendLocation(it) };driveView?.refresh() }.also { myLocation=it }
+        val l=myLocation ?: MyLocation(this) { p,h ->
+            myFix=p;myHeading=h
+            onlineDriving?.let { t ->
+                maybeSendLocation(t)
+                if(haversineKm(p.lat,p.lon,t.route.destination.latitude,t.route.destination.longitude)<=ARRIVE_KM) arrive(t)
+            }
+            driveView?.refresh()
+        }.also { myLocation=it }
         if(!l.start()) { myLocation=null;toast("이 차에서 내 위치를 가져올 수 없어요. 일행 위치만 보여요.") }
     }
     @Deprecated("Legacy permission callback")
@@ -772,4 +824,5 @@ class MainActivity : Activity() {
         if(grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED) { if(onlineDriving!=null) startMyLocation(false) }
         else toast("위치 권한이 없어 내 위치는 보내지 않아요. 일행 위치는 볼 수 있어요.")
     }
+    companion object { /** 목적지까지 이 거리(km) 안이면 도착으로 봄. */ const val ARRIVE_KM=0.3 }
 }

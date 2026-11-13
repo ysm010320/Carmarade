@@ -11,7 +11,7 @@
 cd server
 npm install
 npm start          # http://127.0.0.1:8787
-npm test           # 동작 테스트 13개
+npm test           # 동작 테스트 14개
 ```
 
 환경변수: `PORT`(기본 8787), `HOST`(기본 127.0.0.1), `CARMARADE_DB`(DB 파일 경로).
@@ -53,7 +53,8 @@ node tools/fake-member.js --code 5XWG7F --name 지수 --car "IONIQ 5" --minutes 
 | `GET /v1/rooms/:id` | 방 정보(멤버만) |
 | `POST /v1/rooms/:id/join` | 공개 방 참여 |
 | `POST /v1/join` `{code}` | 초대 코드로 입장 |
-| `POST /v1/rooms/:id/route` | 목적지·경유지 변경(방장) |
+| `POST /v1/rooms/:id/route` | 목적지·경유지 변경(방장). 모든 멤버의 수락이 풀립니다. |
+| `POST /v1/rooms/:id/status` `{accepted?, phase?}` | 내 상태: 최신 경로 수락, `planning`·`driving`·`arrived`. `arrived`면 서버의 내 위치도 지웁니다. |
 | `POST /v1/rooms/:id/leave`, `POST /v1/rooms/:id/close` | 나가기, 닫기(방장) |
 
 장소 형식: `{placeId?, name, lat, lon}`.
@@ -65,7 +66,30 @@ node tools/fake-member.js --code 5XWG7F --name 지수 --car "IONIQ 5" --minutes 
 | `{type:"subscribe", roomId}` | `snapshot`(멤버, 최근 위치) |
 | `{type:"location", roomId, lat, lon, heading?, sharing:"exact"\|"approximate"\|"off"}` | `location`, `location-removed` |
 | `{type:"message", roomId, recipient:"all"\|userId, text}` | `message` |
-| `{type:"unsubscribe", roomId}` | `members`, `room`(경로 변경), `room-closed`, `removed`, `error` |
+| `{type:"unsubscribe", roomId}` | `members`(수락·단계 포함), `room`(경로 변경), `room-closed`, `removed`, `error` |
+
+## 배포 (HTTPS)
+
+### 서버 한 대(VM)에 올리기: Docker + Caddy
+1. 클라우드 VM(예: 국내 클라우드의 작은 리눅스 서버)에 Docker를 설치합니다. 방화벽은 80·443만 엽니다.
+2. 도메인의 A 레코드를 VM 공인 IP로 연결합니다(예: `rooms.example.com`).
+3. 이 저장소를 VM에 받은 뒤:
+   ```bash
+   cd server/deploy
+   DOMAIN=rooms.example.com docker compose up -d --build
+   ```
+   Caddy가 Let's Encrypt 인증서를 자동으로 받고 갱신합니다. 방 서버는 컨테이너 안에서만 열리고, 데이터는 `rooms-data` 볼륨에 남습니다.
+4. 확인: `curl https://rooms.example.com/health` → `{"ok":true}`
+
+### 앱이 배포 서버를 쓰게 하기
+- 빌드할 때 기본 주소를 넣습니다.
+  ```bash
+  ./gradlew :app:assembleRelease -Pcarmarade.serverUrl=https://rooms.example.com
+  ```
+- 이미 설치된 앱은 홈 → "함께 가는 방" → "서버 주소"에서 바꿀 수 있습니다. 앱은 https만 허용합니다(개발용 10.0.2.2·localhost만 http 예외).
+
+### 아직 확인하지 못한 것
+- 이 PC에 Docker가 없어 이미지 빌드·실행은 직접 해 보지 못했습니다. 첫 배포 때 `docker compose logs`로 확인하세요.
 
 ## 실제 서비스 전에 할 일
 

@@ -79,11 +79,14 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     openPublicRooms: db.prepare("SELECT * FROM rooms WHERE status = 'open' AND visibility = 'public' ORDER BY created_at DESC LIMIT 500"),
     myRooms: db.prepare(`SELECT r.* FROM rooms r JOIN members m ON m.room_id = r.id
       WHERE m.user_id = ? AND r.status = 'open' ORDER BY m.joined_at DESC`),
-    members: db.prepare(`SELECT u.id, u.name, u.car, m.role, m.joined_at FROM members m JOIN users u ON u.id = m.user_id
+    members: db.prepare(`SELECT u.id, u.name, u.car, m.role, m.joined_at, m.accepted, m.phase FROM members m JOIN users u ON u.id = m.user_id
       WHERE m.room_id = ? ORDER BY m.joined_at, u.id`),
     memberCount: db.prepare('SELECT COUNT(*) AS n FROM members WHERE room_id = ?'),
     isMember: db.prepare('SELECT 1 AS ok FROM members WHERE room_id = ? AND user_id = ?'),
     addMember: db.prepare('INSERT INTO members (room_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)'),
+    setAccepted: db.prepare('UPDATE members SET accepted = ? WHERE room_id = ? AND user_id = ?'),
+    setPhase: db.prepare('UPDATE members SET phase = ? WHERE room_id = ? AND user_id = ?'),
+    resetAccepted: db.prepare('UPDATE members SET accepted = 0 WHERE room_id = ?'),
     removeMember: db.prepare('DELETE FROM members WHERE room_id = ? AND user_id = ?'),
     setRole: db.prepare('UPDATE members SET role = ? WHERE room_id = ? AND user_id = ?'),
     setHost: db.prepare('UPDATE rooms SET host_id = ? WHERE id = ?'),
@@ -97,7 +100,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
   const codeFailures = new Map(); // userId -> [timestamps]
 
   const isMember = (roomId, userId) => !!q.isMember.get(roomId, userId);
-  const memberList = (roomId) => q.members.all(roomId).map(({ id, name, car, role }) => ({ id, name, car, role }));
+  const memberList = (roomId) => q.members.all(roomId).map(({ id, name, car, role, accepted, phase }) => ({ id, name, car, role, accepted: !!accepted, phase }));
   const roomView = (r) => ({
     id: r.id, title: r.title, kind: r.kind, visibility: r.visibility, status: r.status,
     destination: { placeId: r.dest_place_id, name: r.dest_name, lat: r.dest_lat, lon: r.dest_lon },
@@ -351,9 +354,27 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
       const waypoints = Array.isArray(b.waypoints) ? b.waypoints.map((w) => place(w, '경유지')) : [];
       if (waypoints.length > LIMITS.maxWaypoints) fail(400, 'invalid', `경유지는 최대 ${LIMITS.maxWaypoints}개예요.`);
       q.setRoute.run(destination.placeId, destination.name, destination.lat, destination.lon, JSON.stringify(waypoints), roomId);
+      q.resetAccepted.run(roomId); // 경로가 바뀌면 모두 다시 수락
       const room = roomView(q.room.get(roomId));
       broadcast(roomId, { type: 'room', roomId, room });
+      pushMembers(roomId);
       return { room };
+    }],
+    // 내 상태 알리기: 최신 경로 수락, 출발(driving), 도착(arrived). 도착하면 서버의 내 위치도 지움.
+    ['POST', /^\/v1\/rooms\/([\w-]+)\/status$/, async (req, _url, [roomId]) => {
+      const user = authUser(req); const b = await readJson(req);
+      memberRoom(roomId, user.id);
+      if (b.accepted !== undefined) {
+        if (typeof b.accepted !== 'boolean') fail(400, 'invalid', '수락 여부가 올바르지 않아요.');
+        q.setAccepted.run(b.accepted ? 1 : 0, roomId, user.id);
+      }
+      if (b.phase !== undefined) {
+        if (!['planning', 'driving', 'arrived'].includes(b.phase)) fail(400, 'invalid', '상태가 올바르지 않아요.');
+        q.setPhase.run(b.phase, roomId, user.id);
+        if (b.phase === 'arrived') dropLocation(roomId, user.id);
+      }
+      pushMembers(roomId);
+      return { room: roomView(q.room.get(roomId)) };
     }],
     ['POST', /^\/v1\/rooms\/([\w-]+)\/leave$/, async (req, _url, [roomId]) => {
       const user = authUser(req); leave(roomId, user.id); return { ok: true };
