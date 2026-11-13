@@ -11,7 +11,7 @@
 cd server
 npm install
 npm start          # http://127.0.0.1:8787
-npm test           # 동작 테스트 12개
+npm test           # 동작 테스트 13개
 ```
 
 환경변수: `PORT`(기본 8787), `HOST`(기본 127.0.0.1), `CARMARADE_DB`(DB 파일 경로).
@@ -31,6 +31,7 @@ node tools/fake-member.js --code 5XWG7F --name 지수 --car "IONIQ 5" --minutes 
 |---|---|
 | 가입 | 닉네임·차량만 받고 토큰을 줍니다. 서버에는 토큰의 SHA-256만 저장합니다. |
 | 방 | 공개/비공개, 크루/동행. 목적지 1곳 + 경유지 최대 2개. 최대 5대. 만든 사람이 방장입니다. |
+| 커뮤니티 | 공개 방은 모집 글로 목록에 올라갑니다. 꽉 찬 방, 닫힌 방, 출발 6시간이 지난 방은 빠집니다. |
 | 같은 목적지 찾기 | 목적지 좌표 반경 1km(최대 5km) 안의 **공개 방**만 보여 줍니다. 초대 코드와 멤버 ID는 보여 주지 않습니다. |
 | 초대 코드 | 6자리, 헷갈리는 글자(0/O, 1/I/L) 제외. 공개·비공개 모두 코드로 입장할 수 있습니다. 틀린 코드는 10분에 10번까지만 받습니다. |
 | 방장 | 목적지·경유지 변경, 방 닫기. 방장이 나가면 가장 먼저 들어온 멤버가 방장이 되고, 모두 나가면 방이 닫힙니다. |
@@ -46,7 +47,8 @@ node tools/fake-member.js --code 5XWG7F --name 지수 --car "IONIQ 5" --minutes 
 |---|---|
 | `POST /v1/users` `{name, car}` | 가입 → `{user, token}` |
 | `GET /v1/me`, `GET /v1/me/rooms` | 내 정보, 내가 들어간 방 |
-| `POST /v1/rooms` `{title, kind, visibility, destination, waypoints}` | 방 만들기(초대 코드 포함) |
+| `POST /v1/rooms` `{title, kind, visibility, destination, waypoints, note?, departAt?}` | 방 만들기(초대 코드 포함). `note`는 모집 글(200자), `departAt`은 출발 예정 시각(ms) |
+| `GET /v1/rooms/open?q=` | 커뮤니티: 지금 모집 중인 공개 방(자리 있음). 출발 시간이 가까운 순. `q`로 방 이름·목적지·모집 글 검색 |
 | `GET /v1/rooms?lat=&lon=&radiusKm=` | 같은 목적지의 공개 방 |
 | `GET /v1/rooms/:id` | 방 정보(멤버만) |
 | `POST /v1/rooms/:id/join` | 공개 방 참여 |

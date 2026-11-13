@@ -17,7 +17,11 @@ data class RemoteRoom(
     val id: String, val title: String, val kind: String, val visibility: String,
     val destination: Place, val waypoints: List<Place>,
     val inviteCode: String?, val hostId: String?, val members: List<RemoteMember>,
-    val memberCount: Int, val maxMembers: Int, val hostName: String, val joined: Boolean, val distanceKm: Double
+    val memberCount: Int, val maxMembers: Int, val hostName: String, val joined: Boolean, val distanceKm: Double,
+    /** 모집 글(선택). */
+    val note: String?=null,
+    /** 출발 예정 시각(ms, 선택). */
+    val departAt: Long?=null
 )
 data class RemoteLocation(val userId: String, val lat: Double, val lon: Double, val approximate: Boolean, val at: Long)
 
@@ -63,10 +67,15 @@ class RoomServer(context: Context) {
             prefs.edit().putString("token",j.getString("token")).putString("userId",u.getString("id"))
                 .putString("name",u.getString("name")).putString("car",u.getString("car")).apply()
         }
-    fun createRoom(title: String, crew: Boolean, public: Boolean, route: RoutePlan, done: (Result<RemoteRoom>) -> Unit) =
+    fun createRoom(title: String, crew: Boolean, public: Boolean, route: RoutePlan, note: String?, departAt: Long?, done: (Result<RemoteRoom>) -> Unit) =
         call("POST","/v1/rooms",JSONObject().put("title",title).put("kind",if(crew) "crew" else "trip")
             .put("visibility",if(public) "public" else "private").put("destination",place(route.destination))
-            .put("waypoints",JSONArray(route.waypoints.map(::place))),done=done) { room(it.getJSONObject("room")) }
+            .put("waypoints",JSONArray(route.waypoints.map(::place)))
+            .apply { note?.takeIf { it.isNotBlank() }?.let { put("note",it) };departAt?.let { put("departAt",it) } },done=done) { room(it.getJSONObject("room")) }
+    /** 커뮤니티: 지금 모집 중인 공개 방. [query]는 방 이름·목적지·모집 글 검색어. */
+    fun openRooms(query: String, done: (Result<List<RemoteRoom>>) -> Unit) =
+        call("GET","/v1/rooms/open?q="+java.net.URLEncoder.encode(query.trim(),"UTF-8"),null,done=done) { j ->
+            val a=j.getJSONArray("rooms"); (0 until a.length()).map { room(a.getJSONObject(it)) } }
     /** 같은 목적지(반경 1km)의 공개 방. */
     fun sameDestination(p: Place, done: (Result<List<RemoteRoom>>) -> Unit) =
         call("GET","/v1/rooms?lat=${p.latitude}&lon=${p.longitude}",null,done=done) { j ->
@@ -123,7 +132,9 @@ class RoomServer(context: Context) {
         return RemoteRoom(j.getString("id"),j.getString("title"),j.optString("kind","trip"),j.optString("visibility","public"),
             place(j.getJSONObject("destination")),(0 until w.length()).map { place(w.getJSONObject(it)) },
             j.optString("inviteCode","").ifEmpty { null },j.optString("hostId","").ifEmpty { null },ms,
-            j.optInt("memberCount",ms.size),j.optInt("maxMembers",5),j.optString("hostName",""),j.optBoolean("joined",false),j.optDouble("distanceKm",0.0))
+            j.optInt("memberCount",ms.size),j.optInt("maxMembers",5),j.optString("hostName",""),j.optBoolean("joined",false),j.optDouble("distanceKm",0.0),
+            if(j.isNull("note")) null else j.optString("note","").ifEmpty { null },
+            if(j.isNull("departAt")) null else j.optLong("departAt").takeIf { it>0 })
     }
 
     /** 방 하나의 실시간 연결. 끊기면 2·4·8…초 간격(최대 30초)으로 다시 붙는다. */
