@@ -16,6 +16,10 @@ export const LIMITS = {
   codeWindowMs: 600_000,
   bodyBytes: 16_384,
   messageLength: 200,
+  noteLength: 200,          // 모집 글
+  departAheadMs: 60 * 86_400_000, // 출발 시간은 60일 안쪽
+  feedSize: 30,
+  feedKeepAfterDepartMs: 6 * 3_600_000, // 출발 6시간이 지난 모집은 목록에서 뺌
 };
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // 헷갈리는 0/O, 1/I/L 제외
 
@@ -69,7 +73,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     userByToken: db.prepare('SELECT id, name, car FROM users WHERE token_hash = ?'),
     user: db.prepare('SELECT id, name, car FROM users WHERE id = ?'),
     insertRoom: db.prepare(`INSERT INTO rooms (id, title, kind, visibility, dest_place_id, dest_name, dest_lat, dest_lon,
-      waypoints_json, invite_code, host_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`),
+      waypoints_json, invite_code, host_id, status, created_at, note, depart_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`),
     room: db.prepare('SELECT * FROM rooms WHERE id = ?'),
     roomByCode: db.prepare("SELECT * FROM rooms WHERE invite_code = ? AND status = 'open'"),
     openPublicRooms: db.prepare("SELECT * FROM rooms WHERE status = 'open' AND visibility = 'public' ORDER BY created_at DESC LIMIT 500"),
@@ -98,6 +102,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     id: r.id, title: r.title, kind: r.kind, visibility: r.visibility, status: r.status,
     destination: { placeId: r.dest_place_id, name: r.dest_name, lat: r.dest_lat, lon: r.dest_lon },
     waypoints: JSON.parse(r.waypoints_json), inviteCode: r.invite_code, hostId: r.host_id,
+    note: r.note ?? null, departAt: r.depart_at ?? null,
     maxMembers: LIMITS.maxMembers, members: memberList(r.id), createdAt: r.created_at,
   });
   /** 방 밖 사람에게 보여 주는 요약. 초대 코드와 멤버 ID는 빼고 인원·호스트 이름만. */
@@ -106,7 +111,8 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     destination: { placeId: r.dest_place_id, name: r.dest_name, lat: r.dest_lat, lon: r.dest_lon },
     waypoints: JSON.parse(r.waypoints_json), memberCount: q.memberCount.get(r.id).n, maxMembers: LIMITS.maxMembers,
     hostName: q.user.get(r.host_id)?.name ?? '', joined: isMember(r.id, userId),
-    distanceKm: Math.round(distanceKm * 100) / 100, createdAt: r.created_at,
+    note: r.note ?? null, departAt: r.depart_at ?? null,
+    distanceKm: distanceKm == null ? null : Math.round(distanceKm * 100) / 100, createdAt: r.created_at,
   });
   function openRoom(roomId) {
     const r = q.room.get(roomId);
@@ -274,11 +280,17 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
       const destination = place(b.destination, '목적지');
       const waypoints = Array.isArray(b.waypoints) ? b.waypoints.map((w) => place(w, '경유지')) : [];
       if (waypoints.length > LIMITS.maxWaypoints) fail(400, 'invalid', `경유지는 최대 ${LIMITS.maxWaypoints}개예요.`);
+      const note = text(b.note, '모집 글', LIMITS.noteLength, { optional: true });
       const id = newId('r'); const t = now();
+      let departAt = null;
+      if (b.departAt !== undefined && b.departAt !== null) {
+        departAt = Number(b.departAt);
+        if (!Number.isFinite(departAt) || departAt < t - 3_600_000 || departAt > t + LIMITS.departAheadMs) fail(400, 'invalid', '출발 시간을 다시 골라 주세요.');
+      }
       for (let i = 0; ; i++) {
         try {
           q.insertRoom.run(id, title, kind, visibility, destination.placeId, destination.name, destination.lat, destination.lon,
-            JSON.stringify(waypoints), newCode(), user.id, t);
+            JSON.stringify(waypoints), newCode(), user.id, t, note, departAt);
           break;
         } catch (e) { if (i >= 5 || !String(e.message).includes('UNIQUE')) throw e; } // 코드가 겹치면 다시 만듦
       }
@@ -297,6 +309,20 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
         .sort((a, b) => a.d - b.d || b.r.created_at - a.r.created_at)
         .slice(0, 20)
         .map(({ r, d }) => roomSummary(r, user.id, d));
+      return { rooms };
+    }],
+    // 커뮤니티: 지금 모집 중인 공개 방(자리 있음). 출발 시간이 가까운 순, 시간 없는 방은 최근 순으로 뒤에.
+    ['GET', /^\/v1\/rooms\/open$/, async (req, url) => {
+      const user = authUser(req);
+      const query = (url.searchParams.get('q') ?? '').trim().toLowerCase().slice(0, 40);
+      const t = now();
+      const rooms = q.openPublicRooms.all()
+        .filter((r) => r.depart_at == null || r.depart_at >= t - LIMITS.feedKeepAfterDepartMs)
+        .filter((r) => !query || [r.title, r.dest_name, r.note ?? '', r.waypoints_json].some((v) => v.toLowerCase().includes(query)))
+        .filter((r) => q.memberCount.get(r.id).n < LIMITS.maxMembers || isMember(r.id, user.id))
+        .sort((a, b) => (a.depart_at ?? Infinity) - (b.depart_at ?? Infinity) || b.created_at - a.created_at)
+        .slice(0, LIMITS.feedSize)
+        .map((r) => roomSummary(r, user.id, null));
       return { rooms };
     }],
     ['GET', /^\/v1\/rooms\/([\w-]+)$/, async (req, _url, [roomId]) => {

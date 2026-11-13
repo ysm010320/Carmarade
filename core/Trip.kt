@@ -43,7 +43,9 @@ data class Trip(
     /** 서버가 만든 초대 코드. */
     val roomCode: String? = null,
     /** 서버 방에서 내가 방장인지. 방장만 목적지·경유지를 바꾼다. */
-    val roomHost: Boolean = false
+    val roomHost: Boolean = false,
+    /** 서버 방의 방장 사용자 ID(멤버 목록에 방장 표시용). */
+    val roomHostId: String? = null
 ) {
     init {
         require(name.isNotBlank() && name.length <= 40) { "모임 이름은 1~40자로 입력해 주세요." }

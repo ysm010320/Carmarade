@@ -221,6 +221,33 @@ test('방장만 목적지를 바꾸고, 연결된 멤버에게 바로 알림', a
   wb.close();
 });
 
+test('커뮤니티: 모집 중인 공개 방만, 출발 시간이 가까운 순으로', async () => {
+  const host = await signup('모집방장'); const viewer = await signup('구경꾼');
+  const soon = Date.now() + 3_600_000; const later = Date.now() + 86_400_000;
+  const tag = `동해-${Date.now()}`;
+  const b = await makeRoom(host.token, { title: `${tag} 내일`, departAt: later, note: '천천히 가요' });
+  const a = await makeRoom(host.token, { title: `${tag} 곧`, departAt: soon, note: '휴게소에서 커피 한잔' });
+  const c = await makeRoom(host.token, { title: `${tag} 시간 미정` });
+  await makeRoom(host.token, { title: `${tag} 비공개`, visibility: 'private' });
+  const full = await makeRoom(host.token, { title: `${tag} 꽉참` });
+  for (let i = 0; i < 4; i++) { const u = await signup(`f${i}`); await api('POST', '/v1/join', { token: u.token, body: { code: full.inviteCode } }); }
+  const closed = await makeRoom(host.token, { title: `${tag} 닫힘` });
+  await api('POST', `/v1/rooms/${closed.id}/close`, { token: host.token });
+
+  const r = await api('GET', `/v1/rooms/open?q=${encodeURIComponent(tag)}`, { token: viewer.token });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.rooms.map((x) => x.id), [a.id, b.id, c.id]);
+  assert.equal(r.body.rooms[0].note, '휴게소에서 커피 한잔');
+  assert.equal(r.body.rooms[0].departAt, soon);
+  assert.ok(r.body.rooms.every((x) => x.inviteCode === undefined));
+  // 목적지 이름으로도 찾음
+  const byDest = await api('GET', `/v1/rooms/open?q=${encodeURIComponent('안목')}`, { token: viewer.token });
+  assert.ok(byDest.body.rooms.some((x) => x.id === a.id));
+  // 출발 시간·모집 글 검사
+  assert.equal((await api('POST', '/v1/rooms', { token: host.token, body: { title: 'x', destination: GANGNEUNG, departAt: Date.now() - 86_400_000 } })).status, 400);
+  assert.equal((await api('POST', '/v1/rooms', { token: host.token, body: { title: 'x', destination: GANGNEUNG, note: 'ㅋ'.repeat(201) } })).status, 400);
+});
+
 test('토큰 없는 실시간 연결은 거절', async () => {
   await assert.rejects(new Promise((resolve, reject) => {
     const ws = new WebSocket(wsBase); ws.on('open', resolve); ws.on('error', reject);

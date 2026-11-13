@@ -40,5 +40,9 @@ export function openDb(file) {
       PRIMARY KEY (room_id, user_id)
     );
   `);
+  // 모집 글·출발 시간(나중에 추가된 칸). 예전 DB 파일에도 칸을 더한다.
+  const cols = db.prepare('PRAGMA table_info(rooms)').all().map((c) => c.name);
+  if (!cols.includes('note')) db.exec('ALTER TABLE rooms ADD COLUMN note TEXT');
+  if (!cols.includes('depart_at')) db.exec('ALTER TABLE rooms ADD COLUMN depart_at INTEGER');
   return db;
 }
