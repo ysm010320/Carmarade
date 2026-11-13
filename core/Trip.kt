@@ -110,10 +110,10 @@ data class Trip(
         check(phase == Phase.FINISHED); require(text.length <= 500) { "후기는 500자 이내로 입력해 주세요." }
         return copy(record = record!!.copy(review = text.trim()))
     }
-    /** 서버 방의 멤버 목록으로 바꿈. 나("me")는 그대로 두고, 다른 사람의 수락·공유 상태는 기존 값을 유지. */
+    /** 서버 방의 멤버 목록으로 바꿈. 나("me")는 그대로 두고, 다른 사람의 수락 상태는 서버 값으로, 공유 상태는 기존 값을 유지. */
     fun syncMembers(others: List<Member>): Trip {
         val kept = others.filter { it.id != "me" }.distinctBy { it.id }.take(4).map { o ->
-            members.find { it.id == o.id }?.copy(name = o.name, car = o.car) ?: o
+            members.find { it.id == o.id }?.copy(name = o.name, car = o.car, acceptedVersion = o.acceptedVersion) ?: o
         }
         return copy(members = listOf(members.first()) + kept)
     }

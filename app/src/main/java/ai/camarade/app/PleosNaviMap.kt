@@ -6,6 +6,7 @@ import android.os.Looper
 import ai.camarade.core.*
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.WaypointIndex
+import ai.pleos.playground.navi.data.DestinationArrivedInfo
 import ai.pleos.playground.navi.data.NavigationScreenRequest
 import ai.pleos.playground.navi.data.RequestWaypointInfo
 import ai.pleos.playground.navi.data.RouteInfo
@@ -26,6 +27,8 @@ import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 class PleosNaviMap(context: Context) {
     var ready=false; private set
     var failed=false; private set
+    /** Pleos 내비가 목적지 도착을 알릴 때(메인 스레드). */
+    var onArrived: (() -> Unit)?=null
     private val main=Handler(Looper.getMainLooper())
     private var helper: NaviHelper?=null
     // 내비에 보낸 경로(모임 id + 경로 버전). 같은 경로를 다시 보내 안내를 새로 시작하지 않게 함.
@@ -36,6 +39,7 @@ class PleosNaviMap(context: Context) {
 
     private val listener=object: NaviHelperEventListener {
         override fun onRouteStarted(routeStartInfo: RouteStartInfo) { main.post { waitingKey?.let { finishWaiting(it,"Pleos 내비에 같은 목적지·경유지를 보냈어요.") } } }
+        override fun onDestinationArrived(destinationArrivedInfo: DestinationArrivedInfo) { main.post { onArrived?.invoke() } }
         override fun onError(errorCode: NaviErrorCode) { main.post { if(waitingKey!=null) finishWaiting(null,"내비 경로 요청 오류($errorCode). 현재 위치 지도를 열어요.") } }
     }
 

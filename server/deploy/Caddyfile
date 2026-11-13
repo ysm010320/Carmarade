@@ -1,0 +1,9 @@
+# HTTPS(인증서 자동) → 방 서버. WebSocket(/v1/live)도 그대로 전달된다.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy rooms:8787
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

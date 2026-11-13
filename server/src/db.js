@@ -44,5 +44,9 @@ export function openDb(file) {
   const cols = db.prepare('PRAGMA table_info(rooms)').all().map((c) => c.name);
   if (!cols.includes('note')) db.exec('ALTER TABLE rooms ADD COLUMN note TEXT');
   if (!cols.includes('depart_at')) db.exec('ALTER TABLE rooms ADD COLUMN depart_at INTEGER');
+  // 멤버 상태: 최신 경로 수락 여부, 진행 단계(planning·driving·arrived).
+  const mcols = db.prepare('PRAGMA table_info(members)').all().map((c) => c.name);
+  if (!mcols.includes('accepted')) db.exec('ALTER TABLE members ADD COLUMN accepted INTEGER NOT NULL DEFAULT 0');
+  if (!mcols.includes('phase')) db.exec("ALTER TABLE members ADD COLUMN phase TEXT NOT NULL DEFAULT 'planning'");
   return db;
 }
