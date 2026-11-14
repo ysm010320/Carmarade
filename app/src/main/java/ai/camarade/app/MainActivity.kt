@@ -338,6 +338,7 @@ class MainActivity : Activity() {
                 server.setRoute(t.roomId!!,next) { r -> r.fold({ mutate { it.setRoute("me",destination,waypoints) } },{ e -> toast(e.message ?: "경로를 바꾸지 못했어요.") }) }
             }
         }
+        if(t.online) { inviteCard(t);content.addView(ui.gap(14)) }
         val c=ui.card();val row=ui.row();ui.add(row,ui.text("우리의 목적지",17f,Palette.ink,true),1f);row.addView(ui.chip("경로 v${t.route.version}"));c.addView(row)
         c.addView(ui.gap(16));c.addView(ui.text(t.route.destination.name,26f,Palette.ink,true));c.addView(ui.gap(14))
         if(canEdit) { c.addView(ui.button("목적지 변경") { choosePlace(t.route.waypoints) { p -> changeRoute(p,t.route.waypoints) } });c.addView(ui.gap(14)) }
@@ -356,7 +357,7 @@ class MainActivity : Activity() {
             line.addView(ui.chip(when { t.online && m.id!="me" && memberPhase[m.id]=="arrived" -> "도착";t.online && m.id!="me" && memberPhase[m.id]=="driving" -> "출발함"
                 m.accepted(t.route) -> "수락 완료";else -> "확인 대기" }));r.addView(line);r.addView(ui.gap(7));r.addView(ui.text(m.car,13f,Palette.muted));content.addView(r);content.addView(ui.gap(8))
         }
-        val controls=ui.row();ui.add(controls,ui.button("초대 코드 보기") { invite(t) },1f,margin=3)
+        val controls=ui.row();if(!t.online) ui.add(controls,ui.button("초대 코드 보기") { invite(t) },1f,margin=3)
         if(t.online) ui.add(controls,ui.button("새로고침") { refreshRoom(t) },1f,margin=3)
         else if(t.members.size<5) ui.add(controls,ui.button("+ 가상 멤버") { addMember() },1f,margin=3)
         content.addView(controls);content.addView(ui.gap(10))
@@ -384,6 +385,23 @@ class MainActivity : Activity() {
         if(t.online) { content.addView(ui.gap(10));content.addView(ui.button("방 나가기") { confirmLeave(t) }) }
         note(if(t.online) (if(linkConnected) "실시간으로 연결돼 있어요. " else "방에 연결하는 중이에요. ")+"출발하면 같은 방 멤버에게 내 위치를 보낼지 물어봐요. 목적지에 도착하면 위치 공유가 자동으로 꺼져요."
             else "모두 수락하면 출발할 수 있어요. 실제 주행에서는 각 차량의 내비게이션이 경로를 계산합니다.")
+    }
+    /** 온라인 방의 초대 코드를 크게 보여 줌. 말로 불러 주거나 메시지로 보내기 쉽게 복사 버튼을 둔다. */
+    private fun inviteCard(t: Trip) {
+        val c=ui.card(Palette.dark,22)
+        val head=ui.row();ui.add(head,ui.text("초대 코드",16f,Palette.lime,true),1f)
+        head.addView(ui.chip(if(t.roomHost) "방장" else "멤버",Palette.lime,Palette.dark));c.addView(head);c.addView(ui.gap(14))
+        val cells=ui.row().apply { gravity=Gravity.CENTER_VERTICAL }
+        t.inviteCode.forEach { cells.addView(codeCell(ui,it.toString(),64,80,36f,Palette.lime,Palette.dark)) }
+        c.addView(cells);c.addView(ui.gap(10))
+        c.addView(ui.text("말로 알려 줄 땐 “${spokenCode(t.inviteCode)}”처럼 3글자씩 끊어 읽어요. 받은 사람은 홈이나 커뮤니티에서 ‘초대 코드로 입장’을 누르면 돼요.",13f,Palette.lime));c.addView(ui.gap(14))
+        val buttons=ui.row()
+        ui.add(buttons,ui.button("코드 복사") { copyText("초대 코드",t.inviteCode,"초대 코드를 복사했어요.") },1f,margin=3)
+        ui.add(buttons,ui.button("초대 문구 복사") { copyText("카마라드 초대",inviteMessage(t.name,t.route.destination.name,t.inviteCode),"초대 문구를 복사했어요.") },1f,margin=3)
+        c.addView(buttons);content.addView(c)
+    }
+    private fun copyText(label: String, text: String, done: String) {
+        (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(label,text));toast(done)
     }
     private fun invite(t: Trip) {
         AlertDialog.Builder(this).setTitle("초대 코드 · ${t.inviteCode}")
@@ -552,11 +570,8 @@ class MainActivity : Activity() {
         val code=ui.card()
         code.addView(ui.text("초대 코드로 입장",19f,Palette.ink,true));code.addView(ui.gap(6))
         code.addView(ui.text("방장에게 받은 6자리 코드를 넣으면 비공개 방에도 들어갈 수 있어요.",13f,Palette.muted));code.addView(ui.gap(14))
-        val row=ui.row()
-        val input=ui.edit("예: 5XWG7F").apply { filters=arrayOf(android.text.InputFilter.AllCaps(),android.text.InputFilter.LengthFilter(9)) }
-        ui.add(row,input,1f);row.addView(ui.gap(1).apply { layoutParams=LinearLayout.LayoutParams(ui.d(10),1) })
-        row.addView(ui.button("입장",true) { withAccount { joinCode(input.text.toString()) } })
-        code.addView(row);content.addView(code);content.addView(ui.gap(14))
+        code.addView(ui.button("코드 입력하기",true) { withAccount { askCode() } })
+        content.addView(code);content.addView(ui.gap(14))
         content.addView(ui.button("+  같이 갈 사람 모집하기",true) { draftOnline=true;draftPublic=true;navigate("create") })
         // 모집 목록
         val head=ui.row().apply { setPadding(0,ui.d(22),0,ui.d(12)) }
@@ -603,15 +618,17 @@ class MainActivity : Activity() {
         }
     }
     /** 다른 동행이 주행 중이면 새 방에 들어가지 않음(동시에 두 방에서 위치를 보내지 않도록). */
-    private fun canJoin(roomId: String?=null): Boolean {
+    private fun joinBlocker(roomId: String?=null): String? {
         val active=trips.find { it.phase==Phase.DRIVING }
-        if(active!=null && (roomId==null || active.roomId!=roomId)) { toast("지금 동행 중이에요. 이번 동행을 마친 뒤 다른 방에 참여해 주세요.");return false }
-        return true
+        return if(active!=null && (roomId==null || active.roomId!=roomId)) "지금 동행 중이에요. 이번 동행을 마친 뒤 다른 방에 참여해 주세요." else null
     }
-    private fun joinCode(code: String) {
-        if(code.isBlank()) { toast("초대 코드를 입력해 주세요.");return }
-        if(!canJoin()) return
-        server.joinByCode(code) { r -> r.fold({ onJoined(it,true) },{ e -> toast(e.message ?: "입장하지 못했어요.") }) }
+    private fun canJoin(roomId: String?=null): Boolean { val why=joinBlocker(roomId);if(why!=null) toast(why);return why==null }
+    /** 코드 입력 화면이 열려 있으면 실패 이유를 그 안에 보여 주려고 [onFail]을 받는다. */
+    private fun joinCode(raw: String, onFail: (String) -> Unit={ toast(it) }, onSuccess: () -> Unit={}) {
+        val code=normalizeCode(raw)
+        if(!isCodeComplete(code)) { onFail("초대 코드 ${CODE_LENGTH}자리를 입력해 주세요.");return }
+        joinBlocker()?.let { onFail(it);return }
+        server.joinByCode(code) { r -> r.fold({ onSuccess();onJoined(it,true) },{ e -> onFail(e.message ?: "입장하지 못했어요.") }) }
     }
     private fun joinRoom(room: RemoteRoom) {
         if(!canJoin(room.id)) return
@@ -661,12 +678,15 @@ class MainActivity : Activity() {
             .setNeutralButton("기본값") { _,_ -> server.baseUrl=RoomServer.DEFAULT_URL;render() }
             .setNegativeButton("취소",null).show()
     }
+    /** 초대 코드 입력: 6칸과 화면 자판(Pleos 전체 화면 키보드를 쓰지 않음). */
     private fun askCode() {
-        val input=ui.edit("초대 코드 6자리").apply { filters=arrayOf(android.text.InputFilter.AllCaps(),android.text.InputFilter.LengthFilter(9)) }
-        val holder=ui.col(20);holder.addView(input)
-        AlertDialog.Builder(this).setTitle("초대 코드로 입장").setView(holder)
-            .setPositiveButton("입장") { _,_ -> joinCode(input.text.toString()) }
-            .setNegativeButton("취소",null).show()
+        var dialog: AlertDialog?=null
+        var entry: CodeEntryView?=null
+        entry=CodeEntryView(this,ui) { code -> joinCode(code,{ entry?.showError(it) },{ dialog?.dismiss() }) }
+        val holder=ui.col(20);holder.addView(ui.text("방장에게 받은 6자리 코드를 눌러 주세요.",15f,Palette.muted));holder.addView(ui.gap(16));holder.addView(entry)
+        dialog=AlertDialog.Builder(this).setTitle("초대 코드로 입장").setView(holder).setNegativeButton("취소",null).create()
+        dialog.show()
+        dialog.window?.setLayout(ui.d(560),android.view.WindowManager.LayoutParams.WRAP_CONTENT)
     }
     /** 같은 목적지(반경 1km)의 공개 방 목록. 없으면 이 목적지로 방을 만들게 안내. */
     private fun findRooms(p: Place) {
