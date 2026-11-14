@@ -82,23 +82,33 @@ class Ui(val context: Context) {
             addView(r,LinearLayout.LayoutParams(-1,-2))
         }
     }
-    /** 목록의 한 행: 제목(+ 보조 글) 왼쪽, 오른쪽에 값이나 화살표. 누를 수 있으면 [action]. */
-    fun listRow(title: String, subtitle: String="", trailing: String="", action: (() -> Unit)?=null) = LinearLayout(context).apply {
-        orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; minimumHeight=d(72); setPadding(d(20),d(14),d(20),d(14))
+    /**
+     * 목록의 한 행: 제목(+ 보조 글) 왼쪽, 오른쪽에 상태 칩([tags], 두 번째 값이 true면 초록으로 강조)과 눌렀을 때 일어나는 일([cta]),
+     * 누를 수 있으면 화살표. 눌렀을 때 무엇이 되는지 글로 알려 주려고 [cta]를 둔다.
+     */
+    fun listRow(title: String, subtitle: String="", trailing: String="", tags: List<Pair<String,Boolean>> = emptyList(), cta: String="", action: (() -> Unit)?=null) = LinearLayout(context).apply {
+        orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; minimumHeight=d(76); setPadding(d(20),d(14),d(20),d(14))
         val texts=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
         texts.addView(text(title,18f,Palette.ink,true))
         if(subtitle.isNotEmpty()) { texts.addView(gap(4));texts.addView(text(subtitle,14f,Palette.muted)) }
         addView(texts,LinearLayout.LayoutParams(0,-2,1f))
-        if(trailing.isNotEmpty()) addView(text(trailing,15f,Palette.muted))
+        tags.forEach { (label,on) ->
+            addView(chip(label,if(on) Palette.accentSoft else Palette.soft,if(on) Palette.teal else Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(8) })
+        }
+        if(trailing.isNotEmpty()) addView(text(trailing,15f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
+        if(cta.isNotEmpty()) addView(text(cta,16f,Palette.teal,true),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(16) })
         if(action!=null) {
             addView(text("›",26f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
-            isClickable=true; isFocusable=true; contentDescription=title; setOnClickListener { action() }
+            isClickable=true; isFocusable=true; contentDescription=if(cta.isEmpty()) title else "$title, $cta"; setOnClickListener { action() }
         }
     }
-    /** 위쪽 탭: 고른 탭은 진한 글자와 초록 밑줄, 나머지는 보조 글자. */
-    fun tab(label: String, selected: Boolean, action: () -> Unit) = LinearLayout(context).apply {
+    /** 위쪽 탭: 아이콘 + 글자. 고른 탭은 진한 글자·초록 아이콘과 초록 밑줄, 나머지는 보조 색. */
+    fun tab(label: String, selected: Boolean, icon: Int, action: () -> Unit) = LinearLayout(context).apply {
         orientation=LinearLayout.VERTICAL; isClickable=true; isFocusable=true; contentDescription=label; setOnClickListener { action() }
-        addView(text(label,18f,if(selected) Palette.ink else Palette.muted,selected).apply { gravity=Gravity.CENTER;setPadding(d(18),d(16),d(18),d(14)) })
+        val line=LinearLayout(context).apply { gravity=Gravity.CENTER_VERTICAL;setPadding(d(16),d(14),d(16),d(12)) }
+        line.addView(android.widget.ImageView(context).apply { setImageResource(icon);setColorFilter(if(selected) Palette.teal else Palette.muted) },LinearLayout.LayoutParams(d(26),d(26)).apply { marginEnd=d(8) })
+        line.addView(text(label,18f,if(selected) Palette.ink else Palette.muted,selected))
+        addView(line)
         addView(View(context).apply { setBackgroundColor(if(selected) Palette.teal else Color.TRANSPARENT) },LinearLayout.LayoutParams(-1,d(3)))
     }
     fun chip(value: String, color: Int=Palette.soft, textColor: Int=Palette.muted) = text(value,12f,textColor,true).apply {
