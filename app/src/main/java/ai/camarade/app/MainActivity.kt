@@ -46,6 +46,9 @@ class MainActivity : Activity() {
     // 같은 화면을 다시 그릴 때 스크롤 위치를 유지하기 위해 기억해 둠(버튼을 누를 때마다 맨 위로 튀지 않게).
     private var scrollView: ScrollView?=null
     private var shownScreen=""
+    // 스크롤 위치는 ScrollView 안의 값을 읽지 않고 스크롤 이벤트로 따로 기억한다. 화면이 연달아 두 번 다시 그려질 때
+    // 새 ScrollView는 아직 그려지기 전이라 위치가 0으로 읽혀서, 두 번째 다시 그리기에서 맨 위로 튀던 틈을 없앤다.
+    private var savedScrollY=0
     private val current: Trip? get()=trips.find { it.id==selectedId }
     private val driving: Boolean get()=trips.any { it.phase==Phase.DRIVING }
     private var voiceTripId: String?=null
@@ -213,7 +216,8 @@ class MainActivity : Activity() {
         driveView?.release();driveView=null
         // 출발 전 화면에서 보던 방이 아니면 실시간 연결을 닫음(주행 중인 온라인 방은 유지).
         if(link!=null && onlineDriving==null && !(screen=="trip" && current?.id==linkTripId)) stopLive()
-        val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
+        if(screen!=shownScreen) savedScrollY=0
+        val keepY=savedScrollY
         val root=ui.col();root.setBackgroundColor(Palette.bg)
         // 위쪽 한 줄: 이름, 탭, 연결 상태. 왼쪽 세로 메뉴 대신 Pleos처럼 위쪽 탭을 쓴다.
         // 절반 폭 창(Pleos 2칸 분할)에서는 이름·상태 칩을 빼고 탭 다섯 개를 똑같은 폭으로 한 줄에 둔다. 그렇지 않으면 뒤의 탭이 잘려 나간다.
@@ -239,7 +243,7 @@ class MainActivity : Activity() {
         // 넓은 화면에서 내용이 끝까지 늘어나지 않게 가운데 정렬로 폭을 제한함.
         val side=maxOf(ui.d(24),(resources.displayMetrics.widthPixels-ui.d(940))/2)
         content=ui.col().apply { setPadding(side,ui.d(26),side,ui.d(36)) }
-        val scroll=ScrollView(this).apply { isFillViewport=true;addView(content);clipToPadding=false }
+        val scroll=ScrollView(this).apply { isFillViewport=true;addView(content);clipToPadding=false;setOnScrollChangeListener { _,_,y,_,_ -> savedScrollY=y } }
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));setContentView(root)
         if(saveError!=null) {
             val warning=ui.card(Palette.accentSoft,16)
@@ -286,21 +290,24 @@ class MainActivity : Activity() {
             ui.listRow("방 찾기","모집 중인 방과 같은 목적지 방") { communityRooms=null;navigate("community") }
         ))
     }
-    /** 다음 동행: 위는 경로 개념도, 아래는 일행 프로필 원과 이름·목적지, 시작 버튼. 주행 화면의 프로필 원을 첫인상으로 가져온다. */
+    /**
+     * 다음 동행 카드: 일행 프로필 원, 이름·목적지, 시작 버튼을 한 줄에 둔다(좁은 창에서는 버튼이 아래로).
+     * 홈이 스크롤 없이 한 화면에 들어오도록 지도 그림은 두지 않는다.
+     */
     private fun nextTripCard(t: Trip) {
-        val card=ui.col().apply { background=ui.box(Palette.surface,16,true);clipToOutline=true }
-        card.addView(map(t,170).apply { background=null })
-        val body=ui.col(20)
+        val narrow=narrowWindow()
+        val card=ui.col(20).apply { background=ui.box(Palette.surface,16,true) }
         val line=ui.row()
         line.addView(ui.avatarStack(t.members.map { (if(it.id=="me") "나" else it.name) to (it.id=="me") },52),LinearLayout.LayoutParams(-2,-2).apply { marginEnd=ui.d(18) })
         val texts=ui.col()
         texts.addView(ui.text(t.name,24f,Palette.ink,true));texts.addView(ui.gap(4))
         texts.addView(ui.text("${t.route.destination.name}  ·  ${t.members.size}대"+(if(t.online) "" else "  ·  가상 일행"),16f,Palette.muted))
         ui.add(line,texts,1f)
-        if(t.online) line.addView(ui.chip("온라인",Palette.accentSoft,Palette.teal))
-        body.addView(line);body.addView(ui.gap(16))
-        body.addView(ui.button(if(t.phase==Phase.DRIVING) "이어가기" else "준비하기",true) { select(t) })
-        card.addView(body);content.addView(card)
+        if(t.online) line.addView(ui.chip("온라인",Palette.accentSoft,Palette.teal),LinearLayout.LayoutParams(-2,-2).apply { marginEnd=ui.d(12) })
+        val go=ui.button(if(t.phase==Phase.DRIVING) "이어가기" else "준비하기",true) { select(t) }
+        if(narrow) { card.addView(line);card.addView(ui.gap(14));card.addView(go) }
+        else { line.addView(go,LinearLayout.LayoutParams(ui.d(170),-2));card.addView(line) }
+        content.addView(card)
     }
     private fun create() {
         title("","새 동행 만들기","크루는 오래 함께할 모임, 동행은 이번 여행을 위한 모임이에요.")
