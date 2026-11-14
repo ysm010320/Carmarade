@@ -34,6 +34,10 @@ object Palette {
     val mapInk=Color.rgb(20,23,26)
     val mapMuted=Color.rgb(102,108,115)
     val mapAccent=Color.rgb(11,122,104)
+    val mapSurface=Color.WHITE
+    val mapSoft=Color.rgb(236,238,241)
+    val mapLine=Color.rgb(221,224,228)
+    val mapDanger=Color.rgb(192,57,43)
     /** 예전 이름. 카드 면과 같다. */
     val white get()=surface
 }
@@ -101,6 +105,19 @@ class Ui(val context: Context) {
             addView(text("›",26f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
             isClickable=true; isFocusable=true; contentDescription=if(cta.isEmpty()) title else "$title, $cta"; setOnClickListener { action() }
         }
+    }
+    /** 여럿 중 하나를 고르는 행: 왼쪽 동그라미(고르면 초록 면 + 체크), 제목, 보조 글. 행 전체가 눌림 영역이다. */
+    fun choiceRow(title: String, subtitle: String, selected: Boolean, action: () -> Unit) = LinearLayout(context).apply {
+        orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; minimumHeight=d(84); setPadding(d(20),d(14),d(20),d(14))
+        val mark=TextView(context).apply {
+            text=if(selected) "✓" else ""; textSize=17f; gravity=Gravity.CENTER; setTextColor(Palette.onAccent); includeFontPadding=false
+            background=GradientDrawable().apply { shape=GradientDrawable.OVAL; if(selected) setColor(Palette.teal) else { setColor(Color.TRANSPARENT);setStroke(d(2),Palette.line) } }
+        }
+        addView(mark,LinearLayout.LayoutParams(d(32),d(32)).apply { marginEnd=d(18) })
+        val texts=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
+        texts.addView(text(title,19f,Palette.ink,selected));texts.addView(gap(4));texts.addView(text(subtitle,14f,Palette.muted))
+        addView(texts,LinearLayout.LayoutParams(0,-2,1f))
+        isClickable=true; isFocusable=true; contentDescription=title+if(selected) ", 선택됨" else ""; setOnClickListener { action() }
     }
     /** 위쪽 탭: 아이콘 + 글자. 고른 탭은 진한 글자·초록 아이콘과 초록 밑줄, 나머지는 보조 색. */
     fun tab(label: String, selected: Boolean, icon: Int, action: () -> Unit) = LinearLayout(context).apply {
