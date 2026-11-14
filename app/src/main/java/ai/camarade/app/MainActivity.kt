@@ -238,7 +238,7 @@ class MainActivity : Activity() {
     }
     /** 차가 움직이는 동안 입력·설정 화면 대신 보여 줌. Pleos는 주행 중 설정(NO_SETUP)을 제한함. */
     private fun parkedOnly() {
-        title("DRIVE SAFELY","주행 중에는 운전에 집중해요","모임 만들기·경로 설정·후기 작성은 정차한 뒤에 할 수 있어요.")
+        title("","운전에 집중해요","모임 만들기·경로 설정·후기 작성은 정차한 뒤에 할 수 있어요.")
         if(driving) { content.addView(ui.button("주행 화면으로 돌아가기",true) { navigate("drive") });content.addView(ui.gap(12)) }
         content.addView(ui.button("위치공유 설정") { navigate("privacy") })
     }
@@ -271,12 +271,12 @@ class MainActivity : Activity() {
         ))
     }
     private fun create() {
-        title("MAKE A CREW","함께 갈 사람들을 위한 공간","크루는 오래 함께할 모임, 동행은 이번 여행을 위한 모임이에요.")
-        val c=ui.card();c.addView(ui.text("모임 이름",15f,Palette.ink,true));c.addView(ui.gap(10))
+        title("","새 동행 만들기","크루는 오래 함께할 모임, 동행은 이번 여행을 위한 모임이에요.")
+        val c=ui.card();c.addView(ui.text("모임 이름",15f,Palette.muted,true));c.addView(ui.gap(10))
         val name=ui.edit("예: 주말엔, 동해",draftName);name.filters=arrayOf(android.text.InputFilter.LengthFilter(40));watch(name) { draftName=it };c.addView(name);c.addView(ui.gap(20))
         val types=RadioGroup(this).apply { orientation=RadioGroup.HORIZONTAL }
         listOf("크루","동행").forEachIndexed { i,s -> types.addView(RadioButton(this).apply { id=100+i;text=s;textSize=18f;minHeight=ui.d(52);setPadding(0,0,ui.d(30),0) }) };types.check(draftType);types.setOnCheckedChangeListener { _,id->draftType=id };c.addView(types)
-        c.addView(ui.gap(20));c.addView(ui.text("첫 목적지",15f,Palette.ink,true));c.addView(ui.gap(10))
+        c.addView(ui.gap(20));c.addView(ui.text("첫 목적지",15f,Palette.muted,true));c.addView(ui.gap(10))
         var destination=draftDestination
         val dest=ui.button(destination.name) { };dest.setOnClickListener { choosePlace(emptyList()) { destination=it;draftDestination=it;dest.text=it.name } };c.addView(dest)
         c.addView(ui.gap(20))
@@ -286,7 +286,7 @@ class MainActivity : Activity() {
         c.addView(online);c.addView(public)
         // 공개 방은 커뮤니티에 모집 글로 올라감: 출발 시간과 한 줄 소개.
         val recruit=ui.col().apply { visibility=if(draftOnline && draftPublic) View.VISIBLE else View.GONE }
-        recruit.addView(ui.gap(14));recruit.addView(ui.text("모집 글",15f,Palette.ink,true));recruit.addView(ui.gap(10))
+        recruit.addView(ui.gap(14));recruit.addView(ui.text("모집 글",15f,Palette.muted,true));recruit.addView(ui.gap(10))
         val noteEdit=ui.edit("예: 휴게소에서 커피 한잔하고 가요 (선택)",draftNote,true).apply { filters=arrayOf(android.text.InputFilter.LengthFilter(200));minLines=2 }
         watch(noteEdit) { draftNote=it };recruit.addView(noteEdit);recruit.addView(ui.gap(12))
         val depart=ui.button(departLabel(draftDepart)) { }
@@ -306,15 +306,15 @@ class MainActivity : Activity() {
                     { room -> done(t.copy(roomId=room.id,roomCode=room.inviteCode,roomHost=true,roomHostId=room.hostId));toast("방을 만들었어요. 초대 코드: ${room.inviteCode}") },
                     { e -> toast(e.message ?: "방을 만들지 못했어요.") }) }
             }
-        } });content.addView(c);note("위치공유는 기본으로 꺼져 있어요. 모임을 만든 뒤 직접 켤 수 있습니다.")
+        } });content.addView(c);note("위치 공유는 기본으로 꺼져 있어요. 만든 뒤 직접 켤 수 있어요.")
     }
     private fun planner() {
         val t=current
-        if(t==null || t.phase==Phase.FINISHED) { title("LET'S GO","새로운 동행을 준비해요");content.addView(ui.button("모임 만들기",true) { navigate("create") });return }
+        if(t==null || t.phase==Phase.FINISHED) { title("","준비 중인 동행이 없어요","새 동행을 만들면 여기서 일행과 경로를 정해요.");content.addView(ui.button("새 동행 만들기",true) { navigate("create") });return }
         if(t.phase==Phase.DRIVING) { screen="drive";content.post { render() };return }
         // 온라인 방은 출발 전에도 실시간 연결: 새 멤버·수락·경로 변경이 바로 보인다.
         if(t.online) connectRoom(t)
-        title("PLAN TOGETHER",t.name,if(t.online) "온라인 방 · 같은 방 멤버는 각자 자기 차에서 수락하고 출발해요." else "공통 목적지와 경유지를 확인하고, 각자 수락해요.")
+        title("",t.name,if(t.online) "각자 자기 차에서 경로를 수락하고 출발해요." else "목적지와 경유지를 확인하고 각자 수락해요.")
         // 온라인 방은 방장만 경로를 바꾸고, 바꾸면 서버를 거쳐 멤버에게 전해진다.
         val canEdit=!t.online || t.roomHost
         fun changeRoute(destination: Place, waypoints: List<Place>) {
@@ -337,12 +337,12 @@ class MainActivity : Activity() {
         if(!canEdit) c.addView(ui.text("목적지와 경유지는 방장이 정해요. 바뀌면 다시 수락해 주세요.",13f,Palette.muted))
         content.addView(c);content.addView(ui.gap(18));content.addView(map(t,225))
         sectionTitle("함께 달릴 ${t.members.size}대")
-        t.members.forEach { m ->
-            val role=when { m.id=="me" && t.online -> if(t.roomHost) " · 방장" else "";m.id=="me" -> " · 호스트";t.online -> if(m.id==t.roomHostId) " · 방장" else " · 멤버";else -> " · 가상 멤버" }
-            val r=ui.card(padding=16);val line=ui.row();ui.add(line,ui.text("${m.name}$role",17f,Palette.ink,true),1f)
-            line.addView(ui.chip(when { t.online && m.id!="me" && memberPhase[m.id]=="arrived" -> "도착";t.online && m.id!="me" && memberPhase[m.id]=="driving" -> "출발함"
-                m.accepted(t.route) -> "수락 완료";else -> "확인 대기" }));r.addView(line);r.addView(ui.gap(7));r.addView(ui.text(m.car,13f,Palette.muted));content.addView(r);content.addView(ui.gap(8))
-        }
+        content.addView(ui.group(*t.members.map { m ->
+            val role=when { m.id=="me" && t.online -> if(t.roomHost) " · 방장" else "";m.id=="me" -> " · 호스트";t.online -> if(m.id==t.roomHostId) " · 방장" else "";else -> " · 가상" }
+            val state=when { t.online && m.id!="me" && memberPhase[m.id]=="arrived" -> "도착" to true;t.online && m.id!="me" && memberPhase[m.id]=="driving" -> "출발함" to true
+                m.accepted(t.route) -> "수락 완료" to true;else -> "확인 대기" to false }
+            ui.listRow("${m.name}$role",m.car,tags=listOf(state))
+        }.toTypedArray()));content.addView(ui.gap(12))
         val controls=ui.row();if(!t.online) ui.add(controls,ui.button("초대 코드 보기") { invite(t) },1f,margin=3)
         if(t.online) ui.add(controls,ui.button("새로고침") { refreshRoom(t) },1f,margin=3)
         else if(t.members.size<5) ui.add(controls,ui.button("+ 가상 멤버") { addMember() },1f,margin=3)
@@ -369,8 +369,8 @@ class MainActivity : Activity() {
             if(mutate("drive") { it.start("me",System.currentTimeMillis()) } && t.online) server.setStatus(t.roomId!!,phase="driving")
         })
         if(t.online) { content.addView(ui.gap(10));content.addView(ui.button("방 나가기") { confirmLeave(t) }) }
-        note(if(t.online) (if(linkConnected) "실시간으로 연결돼 있어요. " else "방에 연결하는 중이에요. ")+"출발하면 같은 방 멤버에게 내 위치를 보낼지 물어봐요. 목적지에 도착하면 위치 공유가 자동으로 꺼져요."
-            else "모두 수락하면 출발할 수 있어요. 실제 주행에서는 각 차량의 내비게이션이 경로를 계산합니다.")
+        note(if(t.online) (if(linkConnected) "실시간으로 연결돼 있어요. " else "방에 연결하는 중이에요. ")+"출발하면 위치 공유 여부를 물어보고, 도착하면 자동으로 꺼져요."
+            else "모두 수락하면 출발할 수 있어요. 실제 주행에서는 각 차량의 내비가 길을 안내해요.")
     }
     /** 온라인 방의 초대 코드를 크게 보여 줌. 말로 불러 주거나 메시지로 보내기 쉽게 복사 버튼을 둔다. */
     private fun inviteCard(t: Trip) {
@@ -503,24 +503,20 @@ class MainActivity : Activity() {
     }
     private fun privacy() {
         val t=current
-        title("YOUR LOCATION, YOUR CHOICE","내 위치는, 내가 정해요","동행 안에서 필요한 동안만 함께 나눠요.")
-        if(t==null || t.phase==Phase.FINISHED) { note("진행 중인 동행이 없어요. 위치공유는 꺼져 있습니다.");return }
-        val me=t.members.first();val choices=listOf(Sharing.OFF to "위치 숨기기",Sharing.APPROXIMATE to "대략적인 위치",Sharing.EXACT to "정확한 위치")
-        choices.forEach { (mode,label)->
-            val c=ui.card();c.addView(ui.text((if(me.sharing==mode) "●  " else "○  ")+label,21f,Palette.ink,true));c.addView(ui.gap(10))
-            c.addView(ui.text(when(mode) { Sharing.OFF->"멤버에게 내 위치가 표시되지 않아요.";Sharing.APPROXIMATE->"약 1km 단위로 낮춘 위치를 표시해요.";Sharing.EXACT->"모임 멤버에게만 위치를 보여줘요." },14f,Palette.muted));c.addView(ui.gap(15))
-            c.addView(ui.button(if(me.sharing==mode) "선택됨" else "이 설정 사용",me.sharing==mode) { mutate { it.setSharing("me",mode) } });content.addView(c);content.addView(ui.gap(12))
-        }
-        note(if(t.online) "같은 방 멤버에게만 보내요. 대략적인 위치는 서버에 정확한 값이 남지 않도록 약 1km 단위로 낮춰요. 동행을 마치거나 앱을 닫으면 서버에서 바로 지워요."
-            else "동행 종료 시 자동으로 해제됩니다. 앱을 다시 열 때도 공유 동의를 다시 받아요. 이 모임은 체험 모임이라 가상 좌표만 사용합니다.")
+        title("","위치 공유","동행 중에 일행에게 내 위치를 어떻게 보일지 정해요.")
+        if(t==null || t.phase==Phase.FINISHED) { content.addView(ui.group(ui.listRow("진행 중인 동행이 없어요","위치 공유는 꺼져 있어요")));return }
+        val me=t.members.first()
+        val choices=listOf(Sharing.OFF to ("위치 숨기기" to "일행에게 내 위치가 보이지 않아요."),
+            Sharing.APPROXIMATE to ("대략적인 위치" to "약 1km 단위로 낮춰서 보여요."),Sharing.EXACT to ("정확한 위치" to "같은 모임 일행에게만 정확히 보여요."))
+        content.addView(ui.group(*choices.map { (mode,text) -> ui.choiceRow(text.first,text.second,me.sharing==mode) { if(me.sharing!=mode) mutate { it.setSharing("me",mode) } } }.toTypedArray()))
+        note(if(t.online) "같은 방 일행에게만 보내요. 동행을 마치거나 앱을 닫으면 서버에서 바로 지워요."
+            else "체험 모임이라 가상 좌표만 써요. 동행을 마치면 자동으로 꺼져요.")
     }
     private fun records() {
-        title("OUR ROAD STORIES","함께 달린 길이 이야기가 되도록","도착한 뒤에도, 우리의 동행은 여기 남아요.")
+        title("","주행 기록","마친 동행이 여기에 쌓여요.")
         val records=trips.filter { it.phase==Phase.FINISHED }.reversed()
-        if(records.isEmpty()) { val c=ui.card();c.addView(ui.text("첫 번째 이야기를 기다리고 있어요.",22f,Palette.ink,true));c.addView(ui.gap(12));c.addView(ui.text("동행 체험을 마치면 기록이 쌓입니다.",16f,Palette.muted));content.addView(c) }
-        records.forEach { t->
-            val c=ui.card();c.addView(ui.text(t.name,23f,Palette.ink,true));c.addView(ui.gap(10));c.addView(ui.text("${t.route.destination.name}  ·  ${t.members.size}대  ·  체험 기록",15f,Palette.muted));c.addView(ui.gap(16));c.addView(ui.button("기록 보기  →") { select(t) });content.addView(c);content.addView(ui.gap(12))
-        }
+        if(records.isEmpty()) { content.addView(ui.group(ui.listRow("아직 기록이 없어요","동행을 마치면 여기에 쌓여요")));return }
+        content.addView(ui.group(*records.map { t -> ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대",cta="보기") { select(t) } }.toTypedArray()))
     }
     private fun record() {
         val t=current;val r=t?.record
@@ -544,7 +540,7 @@ class MainActivity : Activity() {
     // ---------- 커뮤니티(모집) ----------
     /** 같이 갈 사람 찾기: 초대 코드 입장, 모집 글 쓰기, 지금 모집 중인 공개 방 목록. */
     private fun community() {
-        title("FIND YOUR CREW","같이 갈 사람을 찾아요","가는 방향이 같은 사람들의 방에 들어가거나, 받은 초대 코드로 바로 입장해요.")
+        title("","같이 갈 사람 찾기","가는 방향이 같은 방에 들어가거나 초대 코드로 입장해요.")
         if(!server.signedIn) {
             val c=ui.card(padding=24)
             c.addView(ui.text("먼저 닉네임을 정해 주세요",20f,Palette.ink,true));c.addView(ui.gap(10))
