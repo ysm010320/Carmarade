@@ -28,9 +28,9 @@ object Palette {
     val ink get()=pick(hex(0x131417),hex(0xFFFFFF))
     val muted get()=pick(hex(0x686A72),hex(0xA4A8AE))
     /** 카마라드 포인트(초록)와 그 위의 글자, 연한 초록 면. 글자·버튼에 쓰므로 대비를 우선해 Pleos의 밝은 활성 초록(#02C265)보다 진하다. */
-    val teal get()=pick(hex(0x0B7A68),hex(0x3CC2A7))
-    val onAccent get()=pick(Color.WHITE,hex(0x081E1A))
-    val accentSoft get()=pick(hex(0xECF7F3),hex(0x173A33))
+    val teal get()=pick(hex(0x0B7A68),hex(0x52AE9B))
+    val onAccent get()=pick(Color.WHITE,hex(0x0E1F1B))
+    val accentSoft get()=pick(hex(0xECF7F3),hex(0x1F332E))
     /** 경고·종료 아이콘: Pleos informative_negative(라이트 #FE3D16, 다크 #FF4C28). 글자에는 대비가 모자라 [dangerText]를 쓴다. */
     val danger get()=pick(hex(0xFE3D16),hex(0xFF4C28))
     val dangerText get()=pick(hex(0xC62B10),hex(0xFF4C28))
