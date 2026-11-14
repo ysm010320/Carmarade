@@ -45,6 +45,8 @@ private data class BubbleStyle(val fill: Int, val stroke: Int, val ink: Int)
 private val REST_STYLE=BubbleStyle(Color.rgb(250,238,218),Color.rgb(239,159,39),Color.rgb(99,56,6))
 private val OK_STYLE=BubbleStyle(Color.rgb(230,241,251),Color.rgb(133,183,235),Color.rgb(12,68,124))
 private val DISTANCE_STYLE=BubbleStyle(Color.rgb(225,245,238),Color.rgb(93,202,165),Color.rgb(8,80,65))
+/** Boing 효과가 가장 크게 부풀 때(약 1.26배)를 덮는 여유 비율. */
+private const val OVERSHOOT_ROOM=0.3f
 private const val REST_LABEL="모두에게 잠깐 쉬어가요"
 private const val OK_LABEL="모두에게 잘 따라가고 있어요"
 private val TEXT_STYLE=BubbleStyle(Color.WHITE,Color.rgb(196,206,192),Palette.ink)
@@ -157,6 +159,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         addView(side,LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { setMargins(0,ui.d(16),ui.d(16),0) })
         addView(icon(R.drawable.ic_chat,"메시지 기록") { host.showHistory() },LayoutParams(ui.d(60),ui.d(60),Gravity.BOTTOM or Gravity.END).apply { setMargins(0,0,ui.d(16),ui.d(16)) })
         row.orientation=LinearLayout.HORIZONTAL;row.gravity=Gravity.BOTTOM;row.layoutTransition=sliding()
+        // 말풍선이 띠용 하고 부풀 때 자기 영역 밖으로 그려지도록 잘라내기를 끔.
+        clipChildren=false;row.clipChildren=false
         addView(row,LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply { setMargins(ui.d(16),0,0,ui.d(16)) })
     }
 
@@ -184,7 +188,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         menu?.dismiss();row.removeAllViews();slots.clear();avatars.clear()
         bubbles.values.forEach { s -> s.expire?.let { removeCallbacks(it) } };bubbles.clear()
         ids.forEach { id ->
-            val slot=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;gravity=Gravity.START;layoutTransition=sliding() }
+            val slot=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL;gravity=Gravity.START;layoutTransition=sliding();clipChildren=false }
             val avatar=TextView(context).apply {
                 text=nameOf(id).take(2);textSize=16f;gravity=Gravity.CENTER;includeFontPadding=false
                 typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL);contentDescription="${nameOf(id)} 메뉴 열기"
@@ -348,13 +352,23 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
             add(icon(R.drawable.ic_coffee,"${nameOf(id)}에게 잠깐 쉬어가요",onClick=close { host.quick(REST_TEXT,id) }),ui.d(56))
             add(icon(R.drawable.ic_thumb_up,"${nameOf(id)}에게 잘 따라가고 있어요",onClick=close { host.quick(OK_TEXT,id) }),ui.d(56))
         }
-        val pw=PopupWindow(content,-2,-2,true).apply {
+        content.measure(MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED),MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED))
+        // 띠용 효과는 잠깐 실제 크기의 약 1.26배까지 부풀어서, 메뉴 창이 딱 맞으면 위·오른쪽이 잘림.
+        // 왼쪽 아래(꼬리)를 기준으로 커지므로 위·오른쪽에 투명한 여유 공간을 둔다. 여유 공간을 누르면 닫힘.
+        val roomTop=(content.measuredHeight*OVERSHOOT_ROOM).toInt();val roomEnd=(content.measuredWidth*OVERSHOOT_ROOM).toInt()
+        val room=FrameLayout(context).apply {
+            clipChildren=false;clipToPadding=false;setPadding(0,roomTop,roomEnd,0)
+            setOnClickListener { menu?.dismiss() }
+            addView(content,LayoutParams(-2,-2))
+        }
+        val pw=PopupWindow(room,-2,-2,true).apply {
             isOutsideTouchable=true;setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            // 여유 공간 때문에 화면 밖으로 나가도 메뉴 위치를 옮기지 않게 함.
+            isClippingEnabled=false
             setOnDismissListener { anchor.tag=null;paintAvatar(id,anchor,false) }
         }
-        content.measure(MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED),MeasureSpec.makeMeasureSpec(0,MeasureSpec.UNSPECIFIED))
         val loc=IntArray(2);anchor.getLocationInWindow(loc)
-        pw.showAtLocation(this,Gravity.NO_GRAVITY,loc[0],loc[1]-content.measuredHeight-ui.d(6))
+        pw.showAtLocation(this,Gravity.NO_GRAVITY,loc[0],loc[1]-content.measuredHeight-roomTop-ui.d(6))
         anchor.tag="open";paintAvatar(id,anchor,true)
         menu=pw
         boing(content,ui.d(22).toFloat())
