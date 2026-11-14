@@ -17,6 +17,10 @@ import ai.camarade.app.net.*
 import java.text.SimpleDateFormat
 import java.util.*
 
+/** 홈 맨 위 문구. 한 곳에서 바꾼다. */
+private const val HOME_SLOGAN = "일단 타요.\n갈 곳은 그다음에."
+private const val HOME_SLOGAN_SUB = "만날 사람도 갈 곳도, 타고 나서 정하면 돼요."
+
 class MainActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var store: TripStore
@@ -257,29 +261,46 @@ class MainActivity : Activity() {
         if(driving) { content.addView(ui.button("주행 화면으로 돌아가기",true) { navigate("drive") });content.addView(ui.gap(12)) }
         content.addView(ui.button("위치공유 설정") { navigate("privacy") })
     }
+    /**
+     * 홈: 슬로건 → 다음 동행 카드(경로 개념도 + 일행 프로필 원 + 시작 버튼) → 시작하기 목록.
+     * 슬로건과 보조 문장은 [HOME_SLOGAN], [HOME_SLOGAN_SUB] 한 곳에서 바꾼다.
+     */
     private fun home() {
-        val head=ui.row()
-        ui.add(head,ui.text("내 동행",30f,Palette.ink,true),1f)
-        head.addView(ui.button("+  새 동행 만들기",true) { navigate("create") }.apply { minHeight=ui.d(60);setPadding(ui.d(26),0,ui.d(26),0) })
-        content.addView(head);content.addView(ui.gap(22))
+        content.addView(ui.text(HOME_SLOGAN,36f,Palette.ink,true).apply { setLineSpacing(0f,1.12f) })
+        content.addView(ui.gap(8));content.addView(ui.text(HOME_SLOGAN_SUB,17f,Palette.muted));content.addView(ui.gap(22))
         loadError?.let { note(it) }
         val active=trips.filter { it.phase!=Phase.FINISHED }
-        if(active.isEmpty()) content.addView(ui.group(ui.listRow("아직 준비된 동행이 없어요","새 동행을 만들거나 아래에서 방에 참여해 보세요.")))
-        if(active.isNotEmpty()) content.addView(ui.group(*active.map { t ->
-            // 일행은 주행 화면과 같은 프로필 원으로 보여 준다(나는 초록). 가상 일행은 부제에 "가상"이라고 적는다.
-            ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대"+(if(t.online) "" else "  ·  가상 일행"),
-                tags=listOfNotNull(if(t.phase==Phase.DRIVING) "주행 중" to true else null,if(t.online) "온라인" to true else null,t.type to false),
-                cta=if(t.phase==Phase.DRIVING) "이어가기" else "준비하기",
-                leading=ui.avatarStack(t.members.map { (if(it.id=="me") "나" else it.name) to (it.id=="me") })) { select(t) }
-        }.toTypedArray()))
-        sectionTitle("방 참여");roomsCard()
-    }
-    /** 방 참여: 초대 코드 입장과 모집 중인 방 찾기만 둔다. 목적지로 찾기는 커뮤니티에, 이름·서버는 설정에 있다. */
-    private fun roomsCard() {
+        if(active.isNotEmpty()) { nextTripCard(active.first());content.addView(ui.gap(14)) }
+        if(active.size>1) {
+            sectionTitle("다른 동행")
+            content.addView(ui.group(*active.drop(1).map { t ->
+                ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대",
+                    tags=listOfNotNull(if(t.online) "온라인" to true else null,t.type to false),cta="준비하기",
+                    leading=ui.avatarStack(t.members.map { (if(it.id=="me") "나" else it.name) to (it.id=="me") })) { select(t) }
+            }.toTypedArray()));content.addView(ui.gap(14))
+        }
+        sectionTitle("시작하기")
         content.addView(ui.group(
+            ui.listRow(if(active.isEmpty()) "새 동행 만들기" else "새 동행 하나 더","목적지를 정하고 일행을 모아요") { navigate("create") },
             ui.listRow("초대 코드로 입장","방장에게 받은 6자리 코드") { withAccount { askCode() } },
             ui.listRow("방 찾기","모집 중인 방과 같은 목적지 방") { communityRooms=null;navigate("community") }
         ))
+    }
+    /** 다음 동행: 위는 경로 개념도, 아래는 일행 프로필 원과 이름·목적지, 시작 버튼. 주행 화면의 프로필 원을 첫인상으로 가져온다. */
+    private fun nextTripCard(t: Trip) {
+        val card=ui.col().apply { background=ui.box(Palette.surface,16,true);clipToOutline=true }
+        card.addView(map(t,170).apply { background=null })
+        val body=ui.col(20)
+        val line=ui.row()
+        line.addView(ui.avatarStack(t.members.map { (if(it.id=="me") "나" else it.name) to (it.id=="me") },52),LinearLayout.LayoutParams(-2,-2).apply { marginEnd=ui.d(18) })
+        val texts=ui.col()
+        texts.addView(ui.text(t.name,24f,Palette.ink,true));texts.addView(ui.gap(4))
+        texts.addView(ui.text("${t.route.destination.name}  ·  ${t.members.size}대"+(if(t.online) "" else "  ·  가상 일행"),16f,Palette.muted))
+        ui.add(line,texts,1f)
+        if(t.online) line.addView(ui.chip("온라인",Palette.accentSoft,Palette.teal))
+        body.addView(line);body.addView(ui.gap(16))
+        body.addView(ui.button(if(t.phase==Phase.DRIVING) "이어가기" else "준비하기",true) { select(t) })
+        card.addView(body);content.addView(card)
     }
     private fun create() {
         title("","새 동행 만들기","크루는 오래 함께할 모임, 동행은 이번 여행을 위한 모임이에요.")
