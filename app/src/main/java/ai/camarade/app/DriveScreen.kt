@@ -300,13 +300,13 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
             setPadding(ui.d(14),ui.d(9),ui.d(14),ui.d(9)+bg.tail.toInt())
             contentDescription=listOfNotNull(prefix,spoken).joinToString(" ")
         }
-        prefix?.let { v.addView(ui.text("$it:",17f,style.ink,true)) }
+        prefix?.let { v.addView(ui.text("$it:",17f,style.ink,true).apply { setLineSpacing(ui.d(3).toFloat(),1f) }) }
         iconRes?.let { res ->
             v.addView(ImageView(context).apply { setImageResource(res);setColorFilter(style.ink) },
                 LinearLayout.LayoutParams(ui.d(28),ui.d(28)).apply { if(prefix!=null) marginStart=ui.d(6) })
         }
         label?.let {
-            v.addView(ui.text(it,17f,style.ink,true).apply { maxWidth=ui.d(420);isSingleLine=true;ellipsize=TextUtils.TruncateAt.END },
+            v.addView(ui.text(it,17f,style.ink,true).apply { setLineSpacing(ui.d(3).toFloat(),1f);maxWidth=ui.d(420);isSingleLine=true;ellipsize=TextUtils.TruncateAt.END },
                 LinearLayout.LayoutParams(-2,-2).apply { if(iconRes!=null || prefix!=null) marginStart=ui.d(6) })
         }
         return v

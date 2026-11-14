@@ -28,7 +28,7 @@ class CodeEntryView(context: Context, private val ui: Ui, private val onSubmit: 
     var code=""; private set
     private val cells=ArrayList<TextView>()
     private val cellRow=LinearLayout(context).apply { gravity=Gravity.CENTER }
-    private val message=ui.text("",14f,Color.rgb(163,45,45),true).apply { gravity=Gravity.CENTER }
+    private val message=ui.text("",14f,Palette.dangerText,true).apply { gravity=Gravity.CENTER }
     private val submit: TextView
     private var busy=false
 

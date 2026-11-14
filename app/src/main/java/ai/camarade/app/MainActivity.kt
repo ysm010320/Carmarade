@@ -182,11 +182,11 @@ class MainActivity : Activity() {
     /** 화면 제목. 영문 소제목은 쓰지 않는다([kicker]는 호출부 호환용). 보조 글은 한 줄만. */
     private fun title(@Suppress("UNUSED_PARAMETER") kicker: String, title: String, subtitle: String="") {
         content.addView(ui.text(title,30f,Palette.ink,true))
-        if(subtitle.isNotEmpty()) { content.addView(ui.gap(6));content.addView(ui.text(subtitle,15f,Palette.muted)) }
+        if(subtitle.isNotEmpty()) { content.addView(ui.gap(6));content.addView(ui.text(subtitle,16f,Palette.muted)) }
         content.addView(ui.gap(22))
     }
     private fun sectionTitle(label: String) { content.addView(ui.gap(14));content.addView(ui.text(label,20f,Palette.ink,true));content.addView(ui.gap(12)) }
-    private fun note(label: String) { content.addView(ui.gap(10));content.addView(ui.text(label,12f,Palette.muted));content.addView(ui.gap(10)) }
+    private fun note(label: String) { content.addView(ui.gap(10));content.addView(ui.text(label,14f,Palette.muted));content.addView(ui.gap(10)) }
     private fun map(t: Trip,height: Int=265): View = RouteMapView(this,t,gateway).apply { layoutParams=LinearLayout.LayoutParams(-1,ui.d(height));clipToOutline=true;background=ui.box(Palette.soft,20) }
     private fun render() {
         val live=current
