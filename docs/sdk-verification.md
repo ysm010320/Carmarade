@@ -93,6 +93,8 @@ Pleos Connect v2.1.0 에뮬레이터(API 34, x86_64, Automotive, RAM 4GB, WHPX �
 ### 이 PC에서 빌드·실행하는 방법
 - **JDK 17이 필요합니다.** Android Studio에 들어 있는 JDK 25로는 Gradle 8.14/Kotlin 2.0.21 빌드가 시작되지 않습니다. Temurin 17을 쓰세요(이번에는 `~/.jdks/jdk-17.0.21+9`에 받아 `JAVA_HOME`으로 지정했습니다).
 - 이미지는 SDK Manager 대신 `crp-sys-img.xml`에 적힌 `crp_car_emulator.zip`(4.09GB, SHA-1 `b4f858d5…`)을 직접 받아 `Sdk/system-images/android-34/pleos_car_emulator/x86_64`에 풀었습니다. 압축을 풀면 약 20GB입니다. AVD는 `avdmanager create avd -n Pleos_Connect_2_1 -k "system-images;android-34;android-automotive;x86_64" -d automotive_1024p_landscape`로 만든 뒤 RAM 4GB, 데이터 6GB, 호스트 GPU, Cold boot로 바꿨습니다.
+- **화면 크기는 꼭 2560×1440으로 바꾸세요(2026-11-10 추가).** 위 명령의 `automotive_1024p_landscape`는 1024×768이라, Pleos 하단 바(공조·앱 바로가기)가 겹쳐 보이고 실제와 다른 크기로 시험하게 됩니다. Pleos 이미지의 기기 정의(`devices.xml`, "Pleos Connect v2.1.0")는 2560×1440, mdpi, 12.8인치입니다. `~/.android/avd/Pleos_Connect_2_1.avd/config.ini`에서 `hw.lcd.width=2560`, `hw.lcd.height=1440`, `hw.lcd.density=160`으로 고친 뒤 에뮬레이터를 다시 켜면 됩니다.
+- **Pleos는 앱의 Toast 알림을 화면에 띄우지 않습니다.** 사용자에게 보여 줄 안내는 앱 화면 안에 직접 그려야 합니다(메인 앱은 화면 아래 알림으로 바꿈).
 
 ## 추가 확인: 주행 상태·권한·도착 이벤트·STT (2026-11-07)
 
