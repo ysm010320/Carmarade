@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         val narrow=narrowWindow()
         val top=ui.row().apply { setPadding(ui.d(if(narrow) 8 else 24),ui.d(2),ui.d(if(narrow) 8 else 24),0);setBackgroundColor(Palette.surface) }
         if(!narrow) top.addView(ui.text("카마라드",20f,Palette.ink,true).apply { setPadding(0,0,ui.d(26),0) })
-        val links=listOf("home" to "내 동행","community" to "커뮤니티","trip" to "함께 달리기","records" to "주행 기록","privacy" to "설정")
+        val links=listOf("home" to "홈","community" to "커뮤니티","trip" to "지금 동행","records" to "기록","privacy" to "설정")
         val icons=mapOf("home" to R.drawable.ic_home,"community" to R.drawable.ic_chat,"trip" to R.drawable.ic_car,"records" to R.drawable.ic_history,"privacy" to R.drawable.ic_settings)
         val tabs=ui.row()
         links.forEach { (key,label) ->
@@ -266,10 +266,11 @@ class MainActivity : Activity() {
         val active=trips.filter { it.phase!=Phase.FINISHED }
         if(active.isEmpty()) content.addView(ui.group(ui.listRow("아직 준비된 동행이 없어요","새 동행을 만들거나 아래에서 방에 참여해 보세요.")))
         if(active.isNotEmpty()) content.addView(ui.group(*active.map { t ->
-            val people=t.members.joinToString(", ") { if(it.id=="me") "나" else if(t.online) it.name else "${it.name}(가상)" }
-            ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대\n$people",
+            // 일행은 주행 화면과 같은 프로필 원으로 보여 준다(나는 초록). 가상 일행은 부제에 "가상"이라고 적는다.
+            ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대"+(if(t.online) "" else "  ·  가상 일행"),
                 tags=listOfNotNull(if(t.phase==Phase.DRIVING) "주행 중" to true else null,if(t.online) "온라인" to true else null,t.type to false),
-                cta=if(t.phase==Phase.DRIVING) "이어가기" else "준비하기") { select(t) }
+                cta=if(t.phase==Phase.DRIVING) "이어가기" else "준비하기",
+                leading=ui.avatarStack(t.members.map { (if(it.id=="me") "나" else it.name) to (it.id=="me") })) { select(t) }
         }.toTypedArray()))
         sectionTitle("방 참여");roomsCard()
     }

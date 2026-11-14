@@ -82,6 +82,29 @@ class Ui(val context: Context) {
     fun add(container: LinearLayout, view: View, weight: Float=0f, width: Int=LinearLayout.LayoutParams.MATCH_PARENT, height: Int=LinearLayout.LayoutParams.WRAP_CONTENT, margin: Int=0) {
         container.addView(view,LinearLayout.LayoutParams(if(weight>0) 0 else width,height,weight).apply { setMargins(d(margin),0,d(margin),0) })
     }
+    /**
+     * 일행 프로필 원을 겹쳐 놓은 묶음(주행 화면의 프로필 원과 같은 모양). 나는 초록 면, 일행은 회색 면에 이름 첫 글자. 겹친 곳은 카드 색 테두리로 갈라 보인다.
+     * [names]는 (이름, 나인지). 넷을 넘으면 마지막 원에 "+n"을 쓴다.
+     */
+    fun avatarStack(names: List<Pair<String,Boolean>>, sizeDp: Int=44) = LinearLayout(context).apply {
+        orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL
+        val shown=if(names.size>4) names.take(3) else names
+        val extra=names.size-shown.size
+        fun circle(label: String, me: Boolean, more: Boolean, index: Int) = TextView(context).apply {
+            text=label; textSize=17f; gravity=Gravity.CENTER; includeFontPadding=false
+            typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+            setTextColor(if(me) Palette.onAccent else Palette.ink)
+            background=GradientDrawable().apply {
+                shape=GradientDrawable.OVAL
+                setColor(if(me) Palette.teal else Palette.line)
+                setStroke(d(2),Palette.surface)
+            }
+            elevation=0f
+            layoutParams=LinearLayout.LayoutParams(d(sizeDp),d(sizeDp)).apply { if(index>0) marginStart=-d(12) }
+        }
+        shown.forEachIndexed { i,(n,me) -> addView(circle(n.take(1),me,false,i)) }
+        if(extra>0) addView(circle("+$extra",false,true,shown.size))
+    }
     /** 설정 앱처럼 구분선으로 나눈 목록 한 덩어리. 카드를 겹겹이 쌓지 않고 면 하나에 행만 둔다. */
     fun group(vararg rows: View) = LinearLayout(context).apply {
         orientation=LinearLayout.VERTICAL; background=box(Palette.surface,16,true)
@@ -94,8 +117,9 @@ class Ui(val context: Context) {
      * 목록의 한 행: 제목(+ 보조 글) 왼쪽, 오른쪽에 상태 칩([tags], 두 번째 값이 true면 초록으로 강조)과 눌렀을 때 일어나는 일([cta]),
      * 누를 수 있으면 화살표. 눌렀을 때 무엇이 되는지 글로 알려 주려고 [cta]를 둔다.
      */
-    fun listRow(title: String, subtitle: String="", trailing: String="", tags: List<Pair<String,Boolean>> = emptyList(), cta: String="", action: (() -> Unit)?=null) = LinearLayout(context).apply {
+    fun listRow(title: String, subtitle: String="", trailing: String="", tags: List<Pair<String,Boolean>> = emptyList(), cta: String="", leading: View?=null, action: (() -> Unit)?=null) = LinearLayout(context).apply {
         orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; minimumHeight=d(76); setPadding(d(20),d(14),d(20),d(14))
+        if(leading!=null) addView(leading,LinearLayout.LayoutParams(-2,-2).apply { marginEnd=d(18) })
         val texts=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
         texts.addView(text(title,20f,Palette.ink,true))
         if(subtitle.isNotEmpty()) { texts.addView(gap(4));texts.addView(text(subtitle,16f,Palette.muted)) }
