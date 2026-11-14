@@ -123,12 +123,19 @@ class Ui(val context: Context) {
         addView(texts,LinearLayout.LayoutParams(0,-2,1f))
         isClickable=true; isFocusable=true; contentDescription=title+if(selected) ", 선택됨" else ""; setOnClickListener { action() }
     }
-    /** 위쪽 탭: 아이콘 + 글자. 고른 탭은 진한 글자·초록 아이콘과 초록 밑줄, 나머지는 보조 색. */
-    fun tab(label: String, selected: Boolean, icon: Int, action: () -> Unit) = LinearLayout(context).apply {
+    /**
+     * 위쪽 탭: 아이콘 + 글자. 고른 탭은 진한 글자·초록 아이콘과 초록 밑줄, 나머지는 보조 색.
+     * [compact]는 절반 폭 창용: 아이콘 위에 글자를 쌓아 다섯 탭이 모두 한 줄에 들어가게 한다.
+     */
+    fun tab(label: String, selected: Boolean, icon: Int, compact: Boolean=false, action: () -> Unit) = LinearLayout(context).apply {
         orientation=LinearLayout.VERTICAL; isClickable=true; isFocusable=true; contentDescription=label; setOnClickListener { action() }
-        val line=LinearLayout(context).apply { gravity=Gravity.CENTER_VERTICAL;setPadding(d(16),d(14),d(16),d(12)) }
-        line.addView(android.widget.ImageView(context).apply { setImageResource(icon);setColorFilter(if(selected) Palette.teal else Palette.muted) },LinearLayout.LayoutParams(d(26),d(26)).apply { marginEnd=d(8) })
-        line.addView(text(label,18f,if(selected) Palette.ink else Palette.muted,selected))
+        val line=LinearLayout(context).apply {
+            orientation=if(compact) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; gravity=if(compact) Gravity.CENTER_HORIZONTAL else Gravity.CENTER_VERTICAL
+            if(compact) setPadding(d(4),d(10),d(4),d(8)) else setPadding(d(16),d(14),d(16),d(12))
+        }
+        val tint=if(selected) Palette.teal else Palette.muted
+        line.addView(android.widget.ImageView(context).apply { setImageResource(icon);setColorFilter(tint) },LinearLayout.LayoutParams(d(26),d(26)).apply { if(!compact) marginEnd=d(8) })
+        line.addView(text(label,if(compact) 15f else 18f,if(selected) Palette.ink else Palette.muted,selected).apply { if(compact) { gravity=Gravity.CENTER;maxLines=1 } })
         addView(line)
         addView(View(context).apply { setBackgroundColor(if(selected) Palette.teal else Color.TRANSPARENT) },LinearLayout.LayoutParams(-1,d(3)))
     }

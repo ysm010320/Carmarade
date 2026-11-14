@@ -15,7 +15,7 @@ interface VehicleGateway {
     fun close()
 }
 class DemoVehicleGateway : VehicleGateway {
-    override val label = "체험 모드 · 가상 일행"
+    override val label = "체험 모드 · 실제 길 안내 아님"
     override fun acceptRoute(route: RoutePlan, completion: (NavigationResult) -> Unit) { completion(NavigationResult.Simulated(route.version)) }
     override fun position(memberIndex: Int, now: Long) = Position(37.56 + memberIndex * 0.012,128.33 + memberIndex * 0.019,now)
     override fun close() = Unit

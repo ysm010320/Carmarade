@@ -115,6 +115,10 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Palette.apply(isNight(resources.configuration))
+        window.decorView.addOnLayoutChangeListener { v,l,_,r,_,_,_,_,_ ->
+            val w=r-l
+            if(w>0 && w!=windowWidthPx) { val was=narrowWindow();windowWidthPx=w;if(narrowWindow()!=was) v.post { render() } }
+        }
         ui=Ui(this);store=TripStore(this);server=RoomServer(this)
         val loaded=store.load();trips=loaded.trips;loadError=loaded.error
         selectedId=savedInstanceState?.getString("selected") ?: trips.firstOrNull()?.id.orEmpty()
@@ -139,6 +143,13 @@ class MainActivity : Activity() {
      * setContentView로 화면을 다시 그려도 남도록 decorView에 붙인다.
      */
     private var notice: TextView?=null
+    // 창 너비(px). 앱이 만든 설정값(screenWidthDp)은 창 크기를 바꿔도 갱신되지 않아서 실제 창 너비를 직접 본다.
+    private var windowWidthPx=0
+    /** 절반 폭 창(Pleos 2칸 분할)인지. 배율을 적용한 dp 기준 720 미만이면 좁은 레이아웃을 쓴다. */
+    private fun narrowWindow(): Boolean {
+        val widthDp=if(windowWidthPx>0) windowWidthPx/resources.displayMetrics.density else resources.configuration.screenWidthDp.toFloat()
+        return widthDp<720f
+    }
     private val hideNotice=Runnable { notice?.animate()?.alpha(0f)?.translationY(ui.d(12).toFloat())?.setDuration(220)?.withEndAction { notice?.visibility=View.GONE }?.start() }
     private fun toast(message: String) {
         val v=notice ?: TextView(this).apply {
@@ -201,21 +212,25 @@ class MainActivity : Activity() {
         val keepY=if(screen==shownScreen) scrollView?.scrollY ?: 0 else 0
         val root=ui.col();root.setBackgroundColor(Palette.bg)
         // 위쪽 한 줄: 이름, 탭, 연결 상태. 왼쪽 세로 메뉴 대신 Pleos처럼 위쪽 탭을 쓴다.
-        val top=ui.row().apply { setPadding(ui.d(24),ui.d(2),ui.d(24),0);setBackgroundColor(Palette.surface) }
-        top.addView(ui.text("카마라드",20f,Palette.teal,true).apply { setPadding(0,0,ui.d(26),0) })
-        val links=listOf("home" to "내 동행","community" to "커뮤니티","trip" to "함께 달리기","records" to "주행 기록","privacy" to "공유 설정")
-        val icons=mapOf("home" to R.drawable.ic_home,"community" to R.drawable.ic_chat,"trip" to R.drawable.ic_car,"records" to R.drawable.ic_history,"privacy" to R.drawable.ic_pin)
+        // 절반 폭 창(Pleos 2칸 분할)에서는 이름·상태 칩을 빼고 탭 다섯 개를 똑같은 폭으로 한 줄에 둔다. 그렇지 않으면 뒤의 탭이 잘려 나간다.
+        val narrow=narrowWindow()
+        val top=ui.row().apply { setPadding(ui.d(if(narrow) 8 else 24),ui.d(2),ui.d(if(narrow) 8 else 24),0);setBackgroundColor(Palette.surface) }
+        if(!narrow) top.addView(ui.text("카마라드",20f,Palette.ink,true).apply { setPadding(0,0,ui.d(26),0) })
+        val links=listOf("home" to "내 동행","community" to "커뮤니티","trip" to "함께 달리기","records" to "주행 기록","privacy" to "설정")
+        val icons=mapOf("home" to R.drawable.ic_home,"community" to R.drawable.ic_chat,"trip" to R.drawable.ic_car,"records" to R.drawable.ic_history,"privacy" to R.drawable.ic_settings)
         val tabs=ui.row()
         links.forEach { (key,label) ->
             val active=key==screen || (key=="trip" && screen=="drive") || (key=="records" && screen=="record") || (key=="home" && screen=="create")
-            tabs.addView(ui.tab(label,active,icons.getValue(key)) {
+            val tabView=ui.tab(label,active,icons.getValue(key),narrow) {
                 if(key=="trip" && current?.phase==Phase.FINISHED) { selectedId=trips.firstOrNull { it.phase!=Phase.FINISHED }?.id.orEmpty() }
                 if(key=="community") communityRooms=null // 들어올 때마다 새 목록
                 navigate(if(key=="trip" && current?.phase==Phase.DRIVING) "drive" else key)
-            })
+            }
+            if(narrow) tabs.addView(tabView,LinearLayout.LayoutParams(0,-2,1f)) else tabs.addView(tabView)
         }
-        top.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false;addView(tabs) },LinearLayout.LayoutParams(0,-2,1f))
-        top.addView(ui.chip(gateway.label));root.addView(top)
+        if(narrow) top.addView(tabs,LinearLayout.LayoutParams(0,-2,1f))
+        else { top.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false;addView(tabs) },LinearLayout.LayoutParams(0,-2,1f));top.addView(ui.chip(gateway.label)) }
+        root.addView(top)
         root.addView(View(this).apply { setBackgroundColor(Palette.line) },LinearLayout.LayoutParams(-1,ui.d(1)))
         // 넓은 화면에서 내용이 끝까지 늘어나지 않게 가운데 정렬로 폭을 제한함.
         val side=maxOf(ui.d(24),(resources.displayMetrics.widthPixels-ui.d(940))/2)
@@ -252,22 +267,17 @@ class MainActivity : Activity() {
         if(active.isEmpty()) content.addView(ui.group(ui.listRow("아직 준비된 동행이 없어요","새 동행을 만들거나 아래에서 방에 참여해 보세요.")))
         if(active.isNotEmpty()) content.addView(ui.group(*active.map { t ->
             val people=t.members.joinToString(", ") { if(it.id=="me") "나" else if(t.online) it.name else "${it.name}(가상)" }
-            ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대  ·  $people",
+            ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대\n$people",
                 tags=listOfNotNull(if(t.phase==Phase.DRIVING) "주행 중" to true else null,if(t.online) "온라인" to true else null,t.type to false),
                 cta=if(t.phase==Phase.DRIVING) "이어가기" else "준비하기") { select(t) }
         }.toTypedArray()))
         sectionTitle("방 참여");roomsCard()
     }
-    /** 온라인 방: 초대 코드 입장, 같은 목적지 방 찾기, 모집 중인 방, 내 이름. 설정 앱처럼 목록 행으로 둔다. */
+    /** 방 참여: 초대 코드 입장과 모집 중인 방 찾기만 둔다. 목적지로 찾기는 커뮤니티에, 이름·서버는 설정에 있다. */
     private fun roomsCard() {
-        val signed=server.signedIn
         content.addView(ui.group(
             ui.listRow("초대 코드로 입장","방장에게 받은 6자리 코드") { withAccount { askCode() } },
-            ui.listRow("같은 목적지 방 찾기","가는 곳이 같은 공개 방") { withAccount { choosePlace(emptyList()) { p -> findRooms(p) } } },
-            ui.listRow("모집 중인 방","커뮤니티에서 둘러보기") { communityRooms=null;navigate("community") },
-            // 닉네임을 바꾸면 새 계정이 되어 기존 방에서 빠지므로, 처음 한 번만 정한다.
-            ui.listRow(if(signed) "내 이름  ${server.nickname}" else "닉네임 정하기",if(signed) server.car.orEmpty() else "방에서 다른 차량에게 보일 이름과 차종",action=if(signed) null else ({ askProfile { render() } })),
-            ui.listRow("서버 주소",server.baseUrl) { editServer() }
+            ui.listRow("방 찾기","모집 중인 방과 같은 목적지 방") { communityRooms=null;navigate("community") }
         ))
     }
     private fun create() {
@@ -501,16 +511,27 @@ class MainActivity : Activity() {
                 .setPositiveButton("체험 기록에 남기기") { _,_-> target=voiceRecipient;send(text,voiceRecipient,InputMode.VOICE) }.setNegativeButton("취소",null).show()
         }
     }
+    /** 설정: 위치 공유, 내 정보(이름·차량), 디버그 빌드에서만 서버 주소. */
     private fun privacy() {
         val t=current
-        title("","위치 공유","동행 중에 일행에게 내 위치를 어떻게 보일지 정해요.")
-        if(t==null || t.phase==Phase.FINISHED) { content.addView(ui.group(ui.listRow("진행 중인 동행이 없어요","위치 공유는 꺼져 있어요")));return }
-        val me=t.members.first()
-        val choices=listOf(Sharing.OFF to ("위치 숨기기" to "일행에게 내 위치가 보이지 않아요."),
-            Sharing.APPROXIMATE to ("대략적인 위치" to "약 1km 단위로 낮춰서 보여요."),Sharing.EXACT to ("정확한 위치" to "같은 모임 일행에게만 정확히 보여요."))
-        content.addView(ui.group(*choices.map { (mode,text) -> ui.choiceRow(text.first,text.second,me.sharing==mode) { if(me.sharing!=mode) mutate { it.setSharing("me",mode) } } }.toTypedArray()))
-        note(if(t.online) "같은 방 일행에게만 보내요. 동행을 마치거나 앱을 닫으면 서버에서 바로 지워요."
-            else "체험 모임이라 가상 좌표만 써요. 동행을 마치면 자동으로 꺼져요.")
+        title("","설정","위치 공유와 내 정보를 정해요.")
+        sectionTitle("위치 공유")
+        if(t==null || t.phase==Phase.FINISHED) content.addView(ui.group(ui.listRow("진행 중인 동행이 없어요","위치 공유는 꺼져 있어요")))
+        else {
+            val me=t.members.first()
+            val choices=listOf(Sharing.OFF to ("위치 숨기기" to "일행에게 내 위치가 보이지 않아요."),
+                Sharing.APPROXIMATE to ("대략적인 위치" to "약 1km 단위로 낮춰서 보여요."),Sharing.EXACT to ("정확한 위치" to "같은 모임 일행에게만 정확히 보여요."))
+            content.addView(ui.group(*choices.map { (mode,text) -> ui.choiceRow(text.first,text.second,me.sharing==mode) { if(me.sharing!=mode) mutate { it.setSharing("me",mode) } } }.toTypedArray()))
+            note(if(t.online) "같은 방 일행에게만 보내요. 동행을 마치거나 앱을 닫으면 서버에서 바로 지워요."
+                else "체험 모임이라 가상 좌표만 써요. 동행을 마치면 자동으로 꺼져요.")
+        }
+        sectionTitle("내 정보")
+        val signed=server.signedIn
+        val rows=mutableListOf<View>(ui.listRow(if(signed) server.nickname.orEmpty() else "닉네임 정하기",if(signed) server.car.orEmpty() else "방에서 다른 차량에게 보일 이름과 차종",
+            action=if(signed) null else ({ askProfile { render() } })))
+        // 서버 주소는 개발용 설정이라 디버그 빌드에서만 보인다.
+        if((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0) rows+=ui.listRow("서버 주소 (개발용)",server.baseUrl) { editServer() }
+        content.addView(ui.group(*rows.toTypedArray()))
     }
     private fun records() {
         title("","주행 기록","마친 동행이 여기에 쌓여요.")
