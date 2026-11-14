@@ -17,27 +17,31 @@ object Palette {
     var night=false; private set
     fun apply(isNight: Boolean) { night=isNight }
     private fun pick(day: Int, dark: Int)=if(night) dark else day
-    /** 화면 바탕 / 카드·목록의 면 / 눌린·비활성 면 / 구분선 */
-    val bg get()=pick(Color.rgb(243,244,246),Color.rgb(16,18,20))
-    val surface get()=pick(Color.WHITE,Color.rgb(27,30,33))
-    val soft get()=pick(Color.rgb(236,238,241),Color.rgb(38,42,46))
-    val line get()=pick(Color.rgb(221,224,228),Color.rgb(51,56,61))
-    /** 글자: 기본 / 보조 */
-    val ink get()=pick(Color.rgb(20,23,26),Color.rgb(241,243,244))
-    val muted get()=pick(Color.rgb(102,108,115),Color.rgb(154,161,168))
-    /** 포인트(초록)와 그 위의 글자, 연한 초록 면, 경고 */
-    val teal get()=pick(Color.rgb(11,122,104),Color.rgb(60,194,167))
-    val onAccent get()=pick(Color.WHITE,Color.rgb(8,30,26))
-    val accentSoft get()=pick(Color.rgb(224,241,236),Color.rgb(23,58,51))
-    val danger get()=pick(Color.rgb(192,57,43),Color.rgb(255,122,107))
-    /** 지도 위에 그리는 글자와 초록. 지도 그림은 낮·밤과 관계없이 밝아서 고정값을 쓴다. */
-    val mapInk=Color.rgb(20,23,26)
-    val mapMuted=Color.rgb(102,108,115)
-    val mapAccent=Color.rgb(11,122,104)
+    private fun hex(v: Long)=Color.rgb(((v shr 16) and 0xFF).toInt(),((v shr 8) and 0xFF).toInt(),(v and 0xFF).toInt())
+    // 회색 단계는 Pleos 디자인 가이드(Foundations > Colors)의 basic_00~900 값과 같다.
+    // 화면 바탕 = background_secondary, 면 = surface_basic, 눌린·비활성 면 = surface_high, 구분선 = surface_accent.
+    val bg get()=pick(hex(0xF7F8FA),hex(0x1D1E21))
+    val surface get()=pick(hex(0xFFFFFF),hex(0x131417))
+    val soft get()=pick(hex(0xEDEEF2),hex(0x313236))
+    val line get()=pick(hex(0xE0E1E6),hex(0x44464E))
+    /** 글자: 기본(basic_900) / 보조(라이트 basic_500, 다크 basic_400). 면 위 대비 4.5:1 이상. */
+    val ink get()=pick(hex(0x131417),hex(0xFFFFFF))
+    val muted get()=pick(hex(0x686A72),hex(0xA4A8AE))
+    /** 카마라드 포인트(초록)와 그 위의 글자, 연한 초록 면. 글자·버튼에 쓰므로 대비를 우선해 Pleos의 밝은 활성 초록(#02C265)보다 진하다. */
+    val teal get()=pick(hex(0x0B7A68),hex(0x3CC2A7))
+    val onAccent get()=pick(Color.WHITE,hex(0x081E1A))
+    val accentSoft get()=pick(hex(0xECF7F3),hex(0x173A33))
+    /** 경고·종료 아이콘: Pleos informative_negative(라이트 #FE3D16, 다크 #FF4C28). 글자에는 대비가 모자라 [dangerText]를 쓴다. */
+    val danger get()=pick(hex(0xFE3D16),hex(0xFF4C28))
+    val dangerText get()=pick(hex(0xC62B10),hex(0xFF4C28))
+    /** 지도 위에 그리는 글자와 면. 지도 그림은 낮·밤과 관계없이 밝아서 고정값을 쓴다. */
+    val mapInk=hex(0x131417)
+    val mapMuted=hex(0x686A72)
+    val mapAccent=hex(0x0B7A68)
     val mapSurface=Color.WHITE
-    val mapSoft=Color.rgb(236,238,241)
-    val mapLine=Color.rgb(221,224,228)
-    val mapDanger=Color.rgb(192,57,43)
+    val mapSoft=hex(0xEDEEF2)
+    val mapLine=hex(0xE0E1E6)
+    val mapDanger=hex(0xFE3D16)
     /** 예전 이름. 카드 면과 같다. */
     val white get()=surface
 }
@@ -59,7 +63,7 @@ class Ui(val context: Context) {
     fun text(value: String, size: Float=16f, color: Int=Palette.ink, bold: Boolean=false) = TextView(context).apply {
         text=value; textSize=size; setTextColor(color); includeFontPadding=false
         typeface=Typeface.create(if(bold) "sans-serif-medium" else "sans-serif",Typeface.NORMAL)
-        setLineSpacing(d(3).toFloat(),1f)
+        setLineSpacing(0f,1.35f)
     }
     fun gap(n: Int=12) = View(context).apply { layoutParams=LinearLayout.LayoutParams(1,d(n)) }
     fun card(color: Int=Palette.surface,padding: Int=22) = col(padding).apply { background=box(color,16,true) }
@@ -93,14 +97,14 @@ class Ui(val context: Context) {
     fun listRow(title: String, subtitle: String="", trailing: String="", tags: List<Pair<String,Boolean>> = emptyList(), cta: String="", action: (() -> Unit)?=null) = LinearLayout(context).apply {
         orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; minimumHeight=d(76); setPadding(d(20),d(14),d(20),d(14))
         val texts=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
-        texts.addView(text(title,18f,Palette.ink,true))
-        if(subtitle.isNotEmpty()) { texts.addView(gap(4));texts.addView(text(subtitle,14f,Palette.muted)) }
+        texts.addView(text(title,20f,Palette.ink,true))
+        if(subtitle.isNotEmpty()) { texts.addView(gap(4));texts.addView(text(subtitle,16f,Palette.muted)) }
         addView(texts,LinearLayout.LayoutParams(0,-2,1f))
         tags.forEach { (label,on) ->
             addView(chip(label,if(on) Palette.accentSoft else Palette.soft,if(on) Palette.teal else Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(8) })
         }
-        if(trailing.isNotEmpty()) addView(text(trailing,15f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
-        if(cta.isNotEmpty()) addView(text(cta,16f,Palette.teal,true),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(16) })
+        if(trailing.isNotEmpty()) addView(text(trailing,16f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
+        if(cta.isNotEmpty()) addView(text(cta,18f,Palette.teal,true),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(16) })
         if(action!=null) {
             addView(text("›",26f,Palette.muted),LinearLayout.LayoutParams(-2,-2).apply { marginStart=d(10) })
             isClickable=true; isFocusable=true; contentDescription=if(cta.isEmpty()) title else "$title, $cta"; setOnClickListener { action() }
@@ -115,7 +119,7 @@ class Ui(val context: Context) {
         }
         addView(mark,LinearLayout.LayoutParams(d(32),d(32)).apply { marginEnd=d(18) })
         val texts=LinearLayout(context).apply { orientation=LinearLayout.VERTICAL }
-        texts.addView(text(title,19f,Palette.ink,selected));texts.addView(gap(4));texts.addView(text(subtitle,14f,Palette.muted))
+        texts.addView(text(title,20f,Palette.ink,selected));texts.addView(gap(4));texts.addView(text(subtitle,16f,Palette.muted))
         addView(texts,LinearLayout.LayoutParams(0,-2,1f))
         isClickable=true; isFocusable=true; contentDescription=title+if(selected) ", 선택됨" else ""; setOnClickListener { action() }
     }
@@ -128,7 +132,7 @@ class Ui(val context: Context) {
         addView(line)
         addView(View(context).apply { setBackgroundColor(if(selected) Palette.teal else Color.TRANSPARENT) },LinearLayout.LayoutParams(-1,d(3)))
     }
-    fun chip(value: String, color: Int=Palette.soft, textColor: Int=Palette.muted) = text(value,12f,textColor,true).apply {
+    fun chip(value: String, color: Int=Palette.soft, textColor: Int=Palette.muted) = text(value,14f,textColor,true).apply {
         background=box(color,9); setPadding(d(10),d(6),d(10),d(6)); gravity=Gravity.CENTER
     }
 }
