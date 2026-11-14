@@ -49,7 +49,7 @@ private val DISTANCE_STYLE=BubbleStyle(Color.rgb(225,245,238),Color.rgb(93,202,1
 private const val OVERSHOOT_ROOM=0.3f
 private const val REST_LABEL="모두에게 잠깐 쉬어가요"
 private const val OK_LABEL="모두에게 잘 따라가고 있어요"
-private val TEXT_STYLE=BubbleStyle(Color.WHITE,Color.rgb(196,206,192),Palette.ink)
+private val TEXT_STYLE=BubbleStyle(Color.WHITE,Color.rgb(196,206,192),Palette.mapInk)
 
 /** 주행 체험 전체 화면 지도. 실제 길 안내가 아닌 개념도. */
 @SuppressLint("ViewConstructor")
@@ -123,7 +123,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     // 개념도는 실제 지도(OpenFreeMap)를 불러오지 못할 때를 위해 아래에 깔아 둠.
     private val map=DriveMapView(context,gateway,host)
     private var live: LiveMapView?=LiveMapView(context,gateway,host) { post { dropLiveMap() } }
-    private val statusChip=ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.muted)
+    private val statusChip=ui.chip("체험 · 가상 일행 · 실제 길 안내 아님",Color.argb(225,255,255,255),Palette.mapMuted)
     private val row=LinearLayout(context)
     private val slots=linkedMapOf<String,LinearLayout>()
     private val avatars=mutableMapOf<String,TextView>()
@@ -163,7 +163,7 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         side.addView(space());side.addView(icon(R.drawable.ic_pin,"위치공유 설정") { host.openPrivacy() })
         soundButton=icon(R.drawable.ic_voice,"음성 읽어주기") { host.toggleSound() }
         side.addView(space());side.addView(soundButton)
-        side.addView(space());side.addView(icon(R.drawable.ic_flag,"주행 종료",Color.rgb(163,45,45)) { host.finishTrip() })
+        side.addView(space());side.addView(icon(R.drawable.ic_flag,"주행 종료",Palette.danger) { host.finishTrip() })
         addView(side,LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { setMargins(0,ui.d(16),ui.d(16),0) })
         addView(icon(R.drawable.ic_chat,"메시지 기록") { host.showHistory() },LayoutParams(ui.d(60),ui.d(60),Gravity.BOTTOM or Gravity.END).apply { setMargins(0,0,ui.d(16),ui.d(16)) })
         row.orientation=LinearLayout.HORIZONTAL;row.gravity=Gravity.BOTTOM;row.layoutTransition=sliding()
@@ -181,15 +181,15 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     private fun space()=View(context).apply { layoutParams=ViewGroup.LayoutParams(ui.d(10),ui.d(10)) }
     private fun icon(res: Int, label: String, tint: Int=Palette.teal, onClick: () -> Unit)=ImageView(context).apply {
         setImageResource(res);setColorFilter(tint);scaleType=ImageView.ScaleType.CENTER_INSIDE
-        setPadding(ui.d(15),ui.d(15),ui.d(15),ui.d(15));background=ui.box(Palette.white,16,true)
+        setPadding(ui.d(15),ui.d(15),ui.d(15),ui.d(15));background=ui.box(Palette.surface,16,true)
         contentDescription=label;isClickable=true;isFocusable=true;layoutParams=ViewGroup.LayoutParams(ui.d(60),ui.d(60))
         setOnClickListener { onClick() }
     }
 
     fun bind(t: Trip, soundOn: Boolean) {
         trip=t;tripId=t.id;map.trip=t;map.invalidate();live?.trip=t
-        soundButton.background=ui.box(if(soundOn) Palette.teal else Palette.white,16,true)
-        soundButton.setColorFilter(if(soundOn) Palette.white else Palette.muted)
+        soundButton.background=ui.box(if(soundOn) Palette.teal else Palette.surface,16,true)
+        soundButton.setColorFilter(if(soundOn) Palette.onAccent else Palette.muted)
         soundButton.contentDescription=if(soundOn) "음성 읽어주기 켜짐" else "음성 읽어주기 꺼짐"
         val ids=listOf("all")+t.members.filter { it.id!="me" }.map { it.id }
         if(ids==slots.keys.toList()) return
@@ -222,10 +222,10 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         val all=id=="all"
         v.background=GradientDrawable().apply {
             shape=GradientDrawable.OVAL
-            setColor(if(open) Palette.soft else if(all) Palette.dark else Palette.white)
+            setColor(if(open) Palette.soft else if(all) Palette.teal else Palette.surface)
             setStroke(ui.d(if(open) 3 else 1),if(open) Palette.teal else Palette.line)
         }
-        v.setTextColor(if(open) Palette.teal else if(all) Palette.lime else Palette.ink)
+        v.setTextColor(if(open) Palette.teal else if(all) Palette.onAccent else Palette.ink)
     }
 
     /** 메시지 말풍선. 모두에게 → "모두" 위에 "이름:", 나에게 → 보낸 사람 위, 내가 한 사람에게 → 그 사람 위에 "나:". */
@@ -284,8 +284,8 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     }
     /** 쉬어가요 버튼은 켜고 끌 수 있고(정차하면 꺼짐), 따봉 버튼은 누른 순간만 잠깐 켜짐. */
     private fun setActive(b: ImageView, on: Boolean, label: String) {
-        b.background=ui.box(if(on) Palette.teal else Palette.white,16,true)
-        b.setColorFilter(if(on) Palette.white else Palette.teal)
+        b.background=ui.box(if(on) Palette.teal else Palette.surface,16,true)
+        b.setColorFilter(if(on) Palette.onAccent else Palette.teal)
         b.isSelected=on;b.contentDescription=if(on) "$label · 보냄" else label
     }
 
