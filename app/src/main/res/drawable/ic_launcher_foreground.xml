@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 카마라드 마크. 108dp 캔버스, 안전 영역에 맞춰 0.73배 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.73" android:scaleY="0.73" android:pivotX="54" android:pivotY="54">
+        <path android:fillColor="#FFFFFF" android:pathData="M54 21L75 43Q77 45 74 45H61V50C61 59 66 64 75 69C82 73 85 78 85 85Q85 87 83 87H79Q77 87 77 85C77 80 74 77 68 74C61 70 57 66 54 59C51 66 47 70 40 74C34 77 31 80 31 85Q31 87 29 87H25Q23 87 23 85C23 78 26 73 33 69C42 64 47 59 47 50V45H34Q31 45 33 43Z"/>
+    </group>
+</vector>

@@ -49,6 +49,13 @@ class MainActivity : Activity() {
     // 스크롤 위치는 ScrollView 안의 값을 읽지 않고 스크롤 이벤트로 따로 기억한다. 화면이 연달아 두 번 다시 그려질 때
     // 새 ScrollView는 아직 그려지기 전이라 위치가 0으로 읽혀서, 두 번째 다시 그리기에서 맨 위로 튀던 틈을 없앤다.
     private var savedScrollY=0
+    /** 디버그 빌드 전용: 스크롤이 한 번에 크게 위로 가거나 맨 위로 돌아가면 logcat(태그 CarmaradeScroll)에 남긴다. */
+    private fun scrollDiag(y: Int, oldY: Int) {
+        if((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)==0) return
+        if(oldY-y>400 || (y==0 && oldY>0)) android.util.Log.w("CarmaradeScroll","jump up $oldY -> $y screen=$screen renders=$renderCount sinceRender=${System.currentTimeMillis()-lastRenderAt}ms")
+    }
+    private var renderCount=0
+    private var lastRenderAt=0L
     private val current: Trip? get()=trips.find { it.id==selectedId }
     private val driving: Boolean get()=trips.any { it.phase==Phase.DRIVING }
     private var voiceTripId: String?=null
@@ -207,6 +214,8 @@ class MainActivity : Activity() {
     private fun note(label: String) { content.addView(ui.gap(10));content.addView(ui.text(label,14f,Palette.muted));content.addView(ui.gap(10)) }
     private fun map(t: Trip,height: Int=265): View = RouteMapView(this,t,gateway).apply { layoutParams=LinearLayout.LayoutParams(-1,ui.d(height));clipToOutline=true;background=ui.box(Palette.soft,20) }
     private fun render() {
+        renderCount++;lastRenderAt=System.currentTimeMillis()
+        if((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE)!=0) android.util.Log.d("CarmaradeScroll","render #$renderCount screen=$screen savedY=$savedScrollY from=${Throwable().stackTrace.getOrNull(1)?.methodName}")
         val live=current
         if(live?.phase==Phase.DRIVING && screen=="trip") screen="drive"
         if(screen=="drive") {
@@ -243,7 +252,7 @@ class MainActivity : Activity() {
         // 넓은 화면에서 내용이 끝까지 늘어나지 않게 가운데 정렬로 폭을 제한함.
         val side=maxOf(ui.d(24),(resources.displayMetrics.widthPixels-ui.d(940))/2)
         content=ui.col().apply { setPadding(side,ui.d(26),side,ui.d(36)) }
-        val scroll=ScrollView(this).apply { isFillViewport=true;addView(content);clipToPadding=false;setOnScrollChangeListener { _,_,y,_,_ -> savedScrollY=y } }
+        val scroll=ScrollView(this).apply { isFillViewport=true;addView(content);clipToPadding=false;setOnScrollChangeListener { _,_,y,_,oldY -> savedScrollY=y;scrollDiag(y,oldY) } }
         root.addView(scroll,LinearLayout.LayoutParams(-1,0,1f));setContentView(root)
         if(saveError!=null) {
             val warning=ui.card(Palette.accentSoft,16)
