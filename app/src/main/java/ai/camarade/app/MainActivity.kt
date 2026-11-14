@@ -204,10 +204,11 @@ class MainActivity : Activity() {
         val top=ui.row().apply { setPadding(ui.d(24),ui.d(2),ui.d(24),0);setBackgroundColor(Palette.surface) }
         top.addView(ui.text("카마라드",20f,Palette.teal,true).apply { setPadding(0,0,ui.d(26),0) })
         val links=listOf("home" to "내 동행","community" to "커뮤니티","trip" to "함께 달리기","records" to "주행 기록","privacy" to "공유 설정")
+        val icons=mapOf("home" to R.drawable.ic_home,"community" to R.drawable.ic_chat,"trip" to R.drawable.ic_car,"records" to R.drawable.ic_history,"privacy" to R.drawable.ic_pin)
         val tabs=ui.row()
         links.forEach { (key,label) ->
             val active=key==screen || (key=="trip" && screen=="drive") || (key=="records" && screen=="record") || (key=="home" && screen=="create")
-            tabs.addView(ui.tab(label,active) {
+            tabs.addView(ui.tab(label,active,icons.getValue(key)) {
                 if(key=="trip" && current?.phase==Phase.FINISHED) { selectedId=trips.firstOrNull { it.phase!=Phase.FINISHED }?.id.orEmpty() }
                 if(key=="community") communityRooms=null // 들어올 때마다 새 목록
                 navigate(if(key=="trip" && current?.phase==Phase.DRIVING) "drive" else key)
@@ -252,7 +253,8 @@ class MainActivity : Activity() {
         if(active.isNotEmpty()) content.addView(ui.group(*active.map { t ->
             val people=t.members.joinToString(", ") { if(it.id=="me") "나" else if(t.online) it.name else "${it.name}(가상)" }
             ui.listRow(t.name,"${t.route.destination.name}  ·  ${t.members.size}대  ·  $people",
-                (if(t.phase==Phase.DRIVING) "주행 중  ·  " else "")+(if(t.online) "온라인  ·  " else "")+t.type) { select(t) }
+                tags=listOfNotNull(if(t.phase==Phase.DRIVING) "주행 중" to true else null,if(t.online) "온라인" to true else null,t.type to false),
+                cta=if(t.phase==Phase.DRIVING) "이어가기" else "준비하기") { select(t) }
         }.toTypedArray()))
         sectionTitle("방 참여");roomsCard()
     }
