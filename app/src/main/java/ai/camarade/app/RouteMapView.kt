@@ -35,14 +35,14 @@ internal fun drawRouteBackdrop(c: Canvas, p: Paint, w: Float, h: Float, scale: F
     line(Color.rgb(190,216,214),27*scale,floatArrayOf(.04f,.8f,.25f,.66f,.5f,.7f,.72f,.5f,1f,.54f),null)
     for(i in 0..4) line(Color.rgb(246,248,241),7*scale,floatArrayOf(0f,.12f+i*.18f,.3f,.22f+i*.12f,.68f,.10f+i*.17f,1f,.24f+i*.13f),null)
     line(Color.WHITE,17*scale,ROUTE,f)
-    line(Palette.mapAccent,7*scale,ROUTE,f)
-    if(caption) drawMapLabel(c,p,"함께하는 목적지",.05f*w,.10f*h,13f,Palette.mapMuted,scale)
-    drawMapLabel(c,p,trip.route.destination.name,f.x(.50f)*w,f.y(.14f)*h,14f,Palette.mapInk,scale)
-    p.color=Palette.mapAccent; c.drawCircle(f.x(.8f)*w,f.y(.17f)*h,9*scale,p)
+    line(Palette.teal,7*scale,ROUTE,f)
+    if(caption) drawMapLabel(c,p,"함께하는 목적지",.05f*w,.10f*h,13f,Palette.muted,scale)
+    drawMapLabel(c,p,trip.route.destination.name,f.x(.50f)*w,f.y(.14f)*h,14f,Palette.ink,scale)
+    p.color=Palette.teal; c.drawCircle(f.x(.8f)*w,f.y(.17f)*h,9*scale,p)
     if(trip.route.waypoints.isNotEmpty()) {
         val x=f.x(.47f)*w; val y=f.y(.42f)*h
-        p.color=Color.WHITE;c.drawCircle(x,y,8*scale,p);p.color=Palette.mapAccent;c.drawCircle(x,y,4*scale,p)
-        drawMapLabel(c,p,trip.route.waypoints.first().name,f.x(.50f)*w,f.y(.46f)*h,12f,Palette.mapMuted,scale)
+        p.color=Color.WHITE;c.drawCircle(x,y,8*scale,p);p.color=Palette.teal;c.drawCircle(x,y,4*scale,p)
+        drawMapLabel(c,p,trip.route.waypoints.first().name,f.x(.50f)*w,f.y(.46f)*h,12f,Palette.muted,scale)
     }
 }
 
@@ -65,9 +65,9 @@ internal fun routePoint(fraction: Double, w: Float, h: Float, f: RouteFrame): Po
 internal fun drawCarMarker(c: Canvas, p: Paint, m: Member, cx: Float, cy: Float, scale: Float) {
     p.style=Paint.Style.FILL
     if(m.sharing==Sharing.APPROXIMATE) { p.color=Color.argb(40,8,111,95);c.drawCircle(cx,cy,37*scale,p) }
-    p.color=if(m.id=="me") Palette.mapAccent else Color.WHITE
+    p.color=if(m.id=="me") Palette.dark else Color.WHITE
     c.drawRoundRect(RectF(cx-22*scale,cy-18*scale,cx+22*scale,cy+18*scale),12*scale,12*scale,p)
-    p.color=if(m.id=="me") Color.WHITE else Palette.mapAccent;p.textSize=13*scale;p.textAlign=Paint.Align.CENTER
+    p.color=if(m.id=="me") Palette.lime else Palette.teal;p.textSize=13*scale;p.textAlign=Paint.Align.CENTER
     p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
     c.drawText(m.name.take(2),cx,cy+5*scale,p);p.textAlign=Paint.Align.LEFT
 }
@@ -86,6 +86,6 @@ class RouteMapView(context: Context, private val trip: Trip, private val gateway
             if(visiblePosition(m.sharing,gateway.position(i,now),now)!=null) { val (x,y)=coords[i]; drawCarMarker(c,p,m,x*w,y*h,scale) }
         }
         p.color=Color.argb(235,255,255,255);c.drawRoundRect(RectF(14*scale,h-42*scale,w-14*scale,h-12*scale),8*scale,8*scale,p)
-        drawMapLabel(c,p,"가상 위치 개념도 · 실제 길 안내 아님",.06f*w,h-23*scale,11f,Palette.mapMuted,scale)
+        drawMapLabel(c,p,"가상 위치 개념도 · 실제 길 안내 아님",.06f*w,h-23*scale,11f,Palette.muted,scale)
     }
 }
