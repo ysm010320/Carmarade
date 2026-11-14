@@ -37,7 +37,15 @@ data class Trip(
     val id: String = UUID.randomUUID().toString(),
     val createdAt: Long = System.currentTimeMillis(),
     val startedAt: Long? = null,
-    val endedAt: Long? = null
+    val endedAt: Long? = null,
+    /** 서버 방 ID. null이면 이 기기 안에서만 쓰는 체험 모임. */
+    val roomId: String? = null,
+    /** 서버가 만든 초대 코드. */
+    val roomCode: String? = null,
+    /** 서버 방에서 내가 방장인지. 방장만 목적지·경유지를 바꾼다. */
+    val roomHost: Boolean = false,
+    /** 서버 방의 방장 사용자 ID(멤버 목록에 방장 표시용). */
+    val roomHostId: String? = null
 ) {
     init {
         require(name.isNotBlank() && name.length <= 40) { "모임 이름은 1~40자로 입력해 주세요." }
@@ -46,7 +54,8 @@ data class Trip(
         require(phase != Phase.DRIVING || startedAt != null)
         require(phase != Phase.FINISHED || (record != null && endedAt != null && members.all { it.sharing == Sharing.OFF }))
     }
-    val inviteCode: String get() = id.replace("-", "").take(6).uppercase()
+    val online: Boolean get() = roomId != null
+    val inviteCode: String get() = roomCode ?: id.replace("-", "").take(6).uppercase()
     companion object {
         fun create(name: String, type: String, destination: Place, now: Long = System.currentTimeMillis()) =
             Trip(name.trim(), type, RoutePlan(destination), createdAt = now)
@@ -72,7 +81,9 @@ data class Trip(
     }
     fun start(actor: String, at: Long): Trip {
         host(actor); planning()
-        require(members.all { it.accepted(route) }) { "모두가 최신 경로를 수락하면 출발할 수 있어요." }
+        // 온라인 방은 멤버가 각자 자기 차에서 수락하므로 내 수락만 확인한다.
+        if (online) require(members.first().accepted(route)) { "최신 경로를 수락하면 출발할 수 있어요." }
+        else require(members.all { it.accepted(route) }) { "모두가 최신 경로를 수락하면 출발할 수 있어요." }
         require(at >= createdAt)
         return copy(phase = Phase.DRIVING, startedAt = at)
     }
@@ -98,6 +109,21 @@ data class Trip(
     fun review(text: String): Trip {
         check(phase == Phase.FINISHED); require(text.length <= 500) { "후기는 500자 이내로 입력해 주세요." }
         return copy(record = record!!.copy(review = text.trim()))
+    }
+    /** 서버 방의 멤버 목록으로 바꿈. 나("me")는 그대로 두고, 다른 사람의 수락 상태는 서버 값으로, 공유 상태는 기존 값을 유지. */
+    fun syncMembers(others: List<Member>): Trip {
+        val kept = others.filter { it.id != "me" }.distinctBy { it.id }.take(4).map { o ->
+            members.find { it.id == o.id }?.copy(name = o.name, car = o.car, acceptedVersion = o.acceptedVersion) ?: o
+        }
+        return copy(members = listOf(members.first()) + kept)
+    }
+    /** 방장이 서버에서 바꾼 목적지·경유지를 받음. 같으면 그대로, 다르면 새 버전이라 다시 수락해야 함. 출발 뒤에는 무시. */
+    fun applyRemoteRoute(destination: Place, waypoints: List<Place>): Trip {
+        if (phase != Phase.PLANNING) return this
+        val next = waypoints.take(2)
+        if (route.destination == destination && route.waypoints == next) return this
+        return copy(route = RoutePlan(destination, next, route.version + 1),
+            members = members.map { if (it.id == "me") it else it.copy(acceptedVersion = route.version + 1) })
     }
     /** Sharing consent must never silently resume after process death. */
     fun restoreSafely(): Trip = copy(members = members.map { it.copy(sharing = Sharing.OFF) })

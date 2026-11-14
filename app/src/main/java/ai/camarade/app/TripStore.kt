@@ -31,6 +31,7 @@ class TripStore(context: Context) {
         put("destination",place(t.route.destination)); put("waypoints",JSONArray(t.route.waypoints.map(::place))); put("routeVersion",t.route.version)
         put("members",JSONArray(t.members.map { m -> JSONObject().put("id",m.id).put("name",m.name).put("car",m.car).put("accepted",m.acceptedVersion) }))
         put("messages",JSONArray(t.messages.map { m -> JSONObject().put("sender",m.sender).put("recipient",m.recipient).put("text",m.text).put("at",m.at) }))
+        t.roomId?.let { put("roomId",it) }; t.roomCode?.let { put("roomCode",it) }; put("roomHost",t.roomHost); t.roomHostId?.let { put("roomHostId",it) }
         t.record?.let { put("record",JSONObject().put("seconds",it.durationSeconds).put("distance",it.distanceKm).put("review",it.review)) }
     }
     private fun decode(j: JSONObject): Trip {
@@ -42,6 +43,7 @@ class TripStore(context: Context) {
             Phase.valueOf(j.getString("phase")),
             (0 until msgs.length()).map { msgs.getJSONObject(it).let { x -> Message(x.getString("sender"),x.getString("recipient"),x.getString("text"),x.getLong("at")) } },
             r?.let { TripRecord(it.getLong("seconds"),it.getDouble("distance"),it.getString("review")) },
-            j.getString("id"),j.getLong("created"),if(j.isNull("started")) null else j.getLong("started"),if(j.isNull("ended")) null else j.getLong("ended"))
+            j.getString("id"),j.getLong("created"),if(j.isNull("started")) null else j.getLong("started"),if(j.isNull("ended")) null else j.getLong("ended"),
+            j.optString("roomId","").ifEmpty { null },j.optString("roomCode","").ifEmpty { null },j.optBoolean("roomHost",false),j.optString("roomHostId","").ifEmpty { null })
     }
 }

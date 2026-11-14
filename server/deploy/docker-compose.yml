@@ -1,0 +1,27 @@
+# 서버 한 대(VM)에 올리는 구성: 방 서버 + Caddy(HTTPS 인증서 자동 발급·갱신).
+# 사용: deploy 폴더에서  DOMAIN=rooms.example.com docker compose up -d --build
+# 준비: 도메인의 A 레코드를 이 서버 IP로, 방화벽에서 80·443만 열기(8787은 열지 않음).
+services:
+  rooms:
+    build: ..
+    restart: unless-stopped
+    volumes:
+      - rooms-data:/data
+    expose:
+      - "8787"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?DOMAIN을 정해 주세요}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - rooms
+volumes:
+  rooms-data:
+  caddy-data:
