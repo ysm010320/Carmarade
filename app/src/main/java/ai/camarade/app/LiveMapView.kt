@@ -101,12 +101,12 @@ class LiveMapView(context: Context, private val gateway: VehicleGateway, private
             // 경유지·목적지
             t.route.waypoints.forEach { w ->
                 val pt=screen(GeoPoint(w.latitude,w.longitude))
-                p.style=Paint.Style.FILL;p.color=Color.WHITE;c.drawCircle(pt.x,pt.y,8*s,p);p.color=Palette.teal;c.drawCircle(pt.x,pt.y,4*s,p)
-                label(c,w.name,pt.x+12*s,pt.y+5*s,13f,Palette.muted,s)
+                p.style=Paint.Style.FILL;p.color=Color.WHITE;c.drawCircle(pt.x,pt.y,8*s,p);p.color=Palette.mapAccent;c.drawCircle(pt.x,pt.y,4*s,p)
+                label(c,w.name,pt.x+12*s,pt.y+5*s,13f,Palette.mapMuted,s)
             }
             val dest=screen(GeoPoint(t.route.destination.latitude,t.route.destination.longitude))
-            p.style=Paint.Style.FILL;p.color=Palette.teal;c.drawCircle(dest.x,dest.y,9*s,p)
-            label(c,t.route.destination.name,dest.x+14*s,dest.y+5*s,15f,Palette.ink,s)
+            p.style=Paint.Style.FILL;p.color=Palette.mapAccent;c.drawCircle(dest.x,dest.y,9*s,p)
+            label(c,t.route.destination.name,dest.x+14*s,dest.y+5*s,15f,Palette.mapInk,s)
             // 차량. 앞서가는 차가 위에 오도록 뒤처진 차부터 그림.
             // 온라인 방이면 서버에서 받은 실제 위치, 체험 모드면 가상 진행률 위치.
             val spots=mutableMapOf<String,PointF>()
@@ -125,7 +125,7 @@ class LiveMapView(context: Context, private val gateway: VehicleGateway, private
             p.textSize=11*s;p.typeface=Typeface.DEFAULT;val text="© OpenFreeMap © OpenMapTiles © OpenStreetMap"
             val tw=p.measureText(text);val x=(width-tw)/2f;val y=58*s
             p.color=Color.argb(210,255,255,255);c.drawRoundRect(RectF(x-8*s,y-14*s,x+tw+8*s,y+6*s),6*s,6*s,p)
-            p.color=Palette.muted;c.drawText(text,x,y,p)
+            p.color=Palette.mapMuted;c.drawText(text,x,y,p)
         }
         private fun label(c: Canvas, text: String, x: Float, y: Float, size: Float, color: Int, s: Float) {
             p.textSize=size*s;p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
@@ -145,9 +145,9 @@ class LiveMapView(context: Context, private val gateway: VehicleGateway, private
                 p.textSize=15*s;p.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                 val tw=p.measureText(text); val bx=pt.x-tw/2-10*s; val by=pt.y+40*s
                 p.color=Color.WHITE;c.drawRoundRect(RectF(bx,by,bx+tw+20*s,by+30*s),10*s,10*s,p)
-                p.color=Palette.ink;c.drawText(text,bx+10*s,by+21*s,p)
+                p.color=Palette.mapInk;c.drawText(text,bx+10*s,by+21*s,p)
             }
-            if(targets.isEmpty()) { p.textSize=15*s;p.color=Palette.ink;p.textAlign=Paint.Align.CENTER;c.drawText("위치를 공유하지 않는 멤버예요",width/2f,height*.5f,p);p.textAlign=Paint.Align.LEFT }
+            if(targets.isEmpty()) { p.textSize=15*s;p.color=Palette.mapInk;p.textAlign=Paint.Align.CENTER;c.drawText("위치를 공유하지 않는 멤버예요",width/2f,height*.5f,p);p.textAlign=Paint.Align.LEFT }
         }
     }
 
