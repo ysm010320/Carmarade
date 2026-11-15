@@ -154,6 +154,8 @@ class MainActivity : Activity() {
         moving=drivingState?.restricted ?: false
         render()
     }
+    /** singleTask: Pleos 하단 바·런처로 다시 열면 새 화면을 만들지 않고 여기로 온다. 주행·위치 공유·서버 연결은 그대로 둔다. */
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent);setIntent(intent) }
     override fun onSaveInstanceState(out: Bundle) { out.putString("selected",selectedId);out.putString("screen",screen);super.onSaveInstanceState(out) }
     override fun onConfigurationChanged(config: Configuration) { super.onConfigurationChanged(config);Palette.apply(isNight(config));render() }
     private fun isNight(c: Configuration)=(c.uiMode and Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES
