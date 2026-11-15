@@ -91,22 +91,16 @@ class VoiceCall(private val context: Context, private val send: (ByteArray) -> U
 
     private fun captureLoop(rec: AudioRecord) {
         val pcm = ShortArray(VOICE_FRAME_SAMPLES)
-        var silent = 0;var tonePhase = 0.0;var usedTone = false;var lastLog = 0L
+        var lastLog = 0L
         try { rec.startRecording() } catch (e: Exception) { onProblem("마이크를 열지 못했어요.");running = false;return }
         while (running) {
             var n = 0
             while (n < pcm.size && running) { val r = rec.read(pcm, n, pcm.size - n); if (r <= 0) { onProblem("마이크가 멈췄어요.");running = false;return }; n += r }
             if (!running) break
             lastMicRms = rms(pcm)
-            // 디버그 빌드 전용: 시험용 에뮬레이터의 마이크는 소리가 없어서, 0.5초 이상 무음이면 440Hz 신호음을 대신 보내 통신 경로를 확인한다.
-            silent = if (lastMicRms < 1.0) silent + 1 else 0
-            if (debuggable && silent > 25) {
-                usedTone = true
-                for (i in pcm.indices) { pcm[i] = (4000 * Math.sin(tonePhase)).toInt().toShort();tonePhase += 2 * Math.PI * 440 / VOICE_RATE }
-            }
             send(ulawEncodeFrame(pcm, n));sent.incrementAndGet()
             val now = System.currentTimeMillis()
-            if (now - lastLog > 2000) { lastLog = now;Log.i(TAG, "보낸=${sent.get()} 받은=${received.get()} 마이크RMS=${"%.1f".format(lastMicRms)} 받은소리RMS=${"%.1f".format(lastPlayRms)}${if (usedTone) " (무음→시험 신호음)" else ""}") }
+            if (now - lastLog > 2000) { lastLog = now;Log.i(TAG, "보낸=${sent.get()} 받은=${received.get()} 마이크RMS=${"%.1f".format(lastMicRms)} 받은소리RMS=${"%.1f".format(lastPlayRms)}") }
         }
     }
 
