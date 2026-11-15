@@ -66,6 +66,12 @@ class MainActivity : Activity() {
     // 온라인 방: 서버 연결, 실시간 연결, 내 위치, 받은 일행 위치.
     private lateinit var server: RoomServer
     private var link: RoomServer.LiveLink?=null
+    // 통화: 마이크·재생, 지금 통화 중인 멤버 ID, 걸려 온 통화, 마이크 권한을 받은 뒤 이어서 할 일.
+    private var voice: VoiceCall?=null
+    private var callMembers=listOf<String>()
+    private var callIncomingFrom: String?=null
+    private var callWasMulti=false
+    private var pendingCall: (() -> Unit)?=null
     private var linkTripId: String?=null
     private var linkConnected=false
     private var myLocation: MyLocation?=null
@@ -91,7 +97,10 @@ class MainActivity : Activity() {
     private val driveHost=object: DriveScreen.Host {
         override fun quick(text: String, recipient: String)=send(text,recipient)
         override fun voiceTo(recipient: String) { target=recipient;voice() }
-        override fun call(recipient: String)=toast("통화 기능은 준비 중이에요.")
+        override fun call(recipient: String)=startCall(recipient)
+        override fun acceptCall()=acceptIncomingCall()
+        override fun declineCall()=declineIncomingCall()
+        override fun endCall()=hangUp(true)
         override fun openPrivacy()=navigate("privacy")
         override fun openNaviMap() {
             val t=trips.find { it.phase==Phase.DRIVING } ?: return
@@ -177,7 +186,8 @@ class MainActivity : Activity() {
         v.animate().alpha(1f).translationY(0f).setDuration(220).start()
         v.removeCallbacks(hideNotice);v.postDelayed(hideNotice,3500)
     }
-    private fun say(message: String) { if(sound) speech?.say(message) }
+    // 통화 중에는 음성 읽어주기가 통화 소리와 겹치지 않게 한다.
+    private fun say(message: String) { if(sound && voice?.active!=true) speech?.say(message) }
     private fun update(next: Trip, after: String?=null): Boolean {
         val result=persistLive(trips,next,store::save)
         trips=result.trips;saveError=result.error
@@ -468,7 +478,7 @@ class MainActivity : Activity() {
     private fun showDrive(t: Trip) {
         val v=driveView?.takeIf { it.tripId==t.id } ?: DriveScreen(this,ui,gateway,driveHost).also { driveView?.release();driveView=it }
         if(t.online) { sim=null;startLive(t) } else if(sim?.tripId!=t.id) sim=DriveSimulation(t,System.currentTimeMillis())
-        v.bind(t,sound)
+        v.bind(t,sound);v.showCall(callLabels());v.showIncoming(callIncomingFrom?.let(::memberLabel))
         v.status(if(!t.online) "체험 · 가상 일행 · 실제 길 안내 아님" else if(linkConnected) "온라인 방 · ${t.inviteCode} · 연결됨" else "온라인 방 · 연결 중…")
         if(v.parent==null) setContentView(v)
         shownScreen="drive";scrollView=null
@@ -825,6 +835,7 @@ class MainActivity : Activity() {
     private fun arrive(t: Trip) {
         if(arrivedTripId==t.id || t.phase!=Phase.DRIVING) return
         arrivedTripId=t.id
+        hangUp(true)
         myLocation?.stop();myLocation=null
         if(t.members.first().sharing!=Sharing.OFF) action { update(t.setSharing("me",Sharing.OFF)) }
         trips.find { it.id==t.id }?.let { maybeSendLocation(it) }
@@ -836,6 +847,7 @@ class MainActivity : Activity() {
     }
     private fun stopLive() {
         sharingAskedFor=null
+        hangUp(false);callIncomingFrom=null
         link?.close();link=null;linkTripId=null;linkConnected=false
         livePositions.clear();liveLastKm.clear()
         myLocation?.stop();myLocation=null;myFix=null;myHeading=null
@@ -865,6 +877,89 @@ class MainActivity : Activity() {
         }
         override fun onRoomClosed() { toast("방이 닫혔어요. 위치 공유를 멈췄어요.");stopLive();driveView?.status("온라인 방 · 닫힘") }
         override fun onError(message: String) { toast(message) }
+        override fun onCallInvite(from: String, to: String) {
+            if(voice?.active==true) return
+            callIncomingFrom=from
+            val name=memberLabel(from)
+            if(driveView!=null) { driveView?.showIncoming(name);say("${name}님이 통화를 걸었어요.") }
+            else toast("${name}님이 통화를 걸었어요. 주행 화면에서 받을 수 있어요.")
+        }
+        override fun onCallMembers(members: List<String>) {
+            callMembers=members
+            val me=server.userId
+            // 건 사람이 먼저 끊었으면(통화 중 목록에서 빠짐) 받지 않은 알림도 지운다.
+            if(callIncomingFrom!=null && callIncomingFrom !in members) { callIncomingFrom=null;driveView?.showIncoming(null) }
+            if(voice?.active==true) {
+                // 서버가 나를 통화에 넣은 뒤에 목록에서 빠졌으면(내보냄·도착 등) 이쪽도 끊는다. 넣기 전에 온 옛 목록은 무시.
+                if(me!=null && me in members) callServerJoined=true else if(callServerJoined) { hangUp(false);return }
+                if(members.size>=2) callWasMulti=true
+                else if(callWasMulti) { toast("통화가 끝났어요.");hangUp(true);return }
+            }
+            driveView?.showCall(callLabels())
+        }
+        override fun onCallDeclined(from: String) {
+            toast("${memberLabel(from)}님이 통화를 받지 않았어요.")
+            if(voice?.active==true && callMembers.size<=1 && !callWasMulti && !callToAll) hangUp(true)
+        }
+    }
+    // ---------- 통화 ----------
+    private var callToAll=false
+    // 건 통화를 30초 안에 아무도 받지 않으면 스스로 끊는다.
+    private val callTimeout=Runnable { if(voice?.active==true && callMembers.size<=1) { toast("아무도 통화를 받지 않았어요.");hangUp(true) } }
+    private var callServerJoined=false
+    private fun memberLabel(id: String)=trips.find { it.id==linkTripId }?.members?.find { it.id==id }?.name ?: "일행"
+    private fun callLabels(): List<String>? = if(voice?.active==true) callMembers.filter { it!=server.userId }.map(::memberLabel) else null
+    /** 마이크 권한이 있으면 바로, 없으면 이유를 먼저 보여 준 뒤 요청하고 [then]을 이어서 한다. */
+    private fun withMic(then: () -> Unit) {
+        if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)==android.content.pm.PackageManager.PERMISSION_GRANTED) { then();return }
+        pendingCall=then
+        AlertDialog.Builder(this).setTitle("마이크 권한이 필요해요")
+            .setMessage("통화로 내 목소리를 일행에게 전하려면 마이크를 써야 해요. 통화하는 동안에만 쓰고, 소리는 저장하지 않아요.")
+            .setPositiveButton("계속") { _,_ -> requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),62) }
+            .setNegativeButton("취소") { _,_ -> pendingCall=null }.show()
+    }
+    private fun joinVoice(l: RoomServer.LiveLink): Boolean {
+        if(voice?.active==true) return true
+        speech?.stop()
+        val v=VoiceCall(this,{ l.sendAudio(it) }) { msg -> runOnUiThread { toast(msg);hangUp(true) } }
+        if(!v.start()) { toast("마이크를 열 수 없어서 통화할 수 없어요.");return false }
+        voice=v;l.audioSink={ from,payload -> v.receive(from,payload) }
+        callWasMulti=false
+        driveView?.showCall(callLabels())
+        return true
+    }
+    private fun startCall(recipient: String) {
+        val t=onlineDriving;val l=link
+        if(t==null) { toast("온라인 방에서 주행 중일 때만 통화할 수 있어요. 체험 모드에서는 통화가 되지 않아요.");return }
+        if(l==null || !linkConnected) { toast("서버에 연결되면 다시 눌러 주세요.");return }
+        if(recipient=="me") return
+        withMic {
+            val link2=link ?: return@withMic
+            if(!joinVoice(link2)) return@withMic
+            callToAll=recipient=="all"
+            link2.sendCall("call-invite",recipient)
+            ticker.removeCallbacks(callTimeout);ticker.postDelayed(callTimeout,30_000)
+            toast(if(recipient=="all") "모두에게 통화를 걸었어요." else "${memberLabel(recipient)}님에게 통화를 걸었어요.")
+        }
+    }
+    private fun acceptIncomingCall() {
+        callIncomingFrom=null;driveView?.showIncoming(null)
+        withMic { val l=link ?: return@withMic;if(joinVoice(l)) { callToAll=false;l.sendCall("call-join") } }
+    }
+    private fun declineIncomingCall() {
+        val from=callIncomingFrom ?: return
+        callIncomingFrom=null;driveView?.showIncoming(null)
+        link?.sendCall("call-decline",from)
+    }
+    /** 통화에서 나감. [tellServer]가 참이면 서버에도 알린다(연결을 닫는 중이면 거짓). */
+    private fun hangUp(tellServer: Boolean) {
+        val was=voice
+        ticker.removeCallbacks(callTimeout)
+        was?.stop();voice=null
+        link?.audioSink=null
+        if(was!=null && tellServer) link?.sendCall("call-leave")
+        callMembers=emptyList();callWasMulti=false;callToAll=false;callServerJoined=false
+        driveView?.showCall(null)
     }
     /** 1초마다: 내 위치 보내기, 일행 남은 거리 알림. */
     private fun onlineTick(t: Trip) {
@@ -917,6 +1012,11 @@ class MainActivity : Activity() {
     @Deprecated("Legacy permission callback")
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==62) {
+            val next=pendingCall;pendingCall=null
+            if(grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED) next?.invoke() else toast("마이크 권한이 없어 통화할 수 없어요.")
+            return
+        }
         if(requestCode!=61) return
         if(grantResults.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED) { if(onlineDriving!=null) startMyLocation(false) }
         else toast("위치 권한이 없어 내 위치는 보내지 않아요. 일행 위치는 볼 수 있어요.")

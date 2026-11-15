@@ -8,6 +8,7 @@ import ai.camarade.app.BuildConfig
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.ByteString
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -39,6 +40,11 @@ interface LiveEvents {
     fun onMessage(from: String, recipient: String, text: String, at: Long) {}
     fun onRoomClosed() {}
     fun onError(message: String) {}
+    /** 일행이 통화를 걺. [to]는 "all" 또는 내 ID. */
+    fun onCallInvite(from: String, to: String) {}
+    /** 지금 통화 중인 멤버 ID 목록(나 포함). */
+    fun onCallMembers(members: List<String>) {}
+    fun onCallDeclined(from: String) {}
 }
 
 /**
@@ -161,6 +167,8 @@ class RoomServer(context: Context) {
                     main.post { events.onConnected(true) }
                 }
                 override fun onMessage(webSocket: WebSocket, text: String) { val m=runCatching { JSONObject(text) }.getOrNull() ?: return;main.post { dispatch(m) } }
+                // 통화 음성은 메인 스레드를 거치지 않고 바로 재생기로 넘긴다(초당 50번 들어옴).
+                override fun onMessage(webSocket: WebSocket, bytes: ByteString) { if(!closed) parseAudioPacket(bytes.toByteArray())?.let { audioSink?.invoke(it.sender,it.payload) } }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { lost() }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { lost() }
             })
@@ -184,6 +192,9 @@ class RoomServer(context: Context) {
                 "message" -> events.onMessage(m.getString("from"),m.getString("recipient"),m.getString("text"),m.optLong("at"))
                 "room-closed","removed" -> { events.onRoomClosed();close() }
                 "error" -> events.onError(m.optString("message","서버 오류"))
+                "call-invite" -> events.onCallInvite(m.getString("from"),m.optString("to","all"))
+                "call-members" -> { val a=m.optJSONArray("members") ?: JSONArray();events.onCallMembers((0 until a.length()).map { a.getString(it) }) }
+                "call-declined" -> events.onCallDeclined(m.getString("from"))
             }
         }
         /** 위치 보내기. sharing은 "exact" | "approximate" | "off". */
@@ -192,6 +203,12 @@ class RoomServer(context: Context) {
             if(sharing!="off") { j.put("lat",lat).put("lon",lon);heading?.let { j.put("heading",it) } }
             socket?.send(j.toString())
         }
+        /** 통화 음성을 받을 곳. OkHttp 스레드에서 불린다. */
+        @Volatile var audioSink: ((from: String, payload: ByteArray) -> Unit)?=null
+        /** 통화 신호: "call-invite"(to=멤버 ID 또는 "all"), "call-join", "call-leave", "call-decline"(to=건 사람). */
+        fun sendCall(type: String, to: String?=null) { socket?.send(JSONObject().put("type",type).put("roomId",roomId).apply { to?.let { put("to",it) } }.toString()) }
+        /** 통화 음성 한 조각(µ-law 20ms). 어느 스레드에서든 부를 수 있다. */
+        fun sendAudio(payload: ByteArray): Boolean=socket?.send(ByteString.of(*audioPacket(roomId,payload))) ?: false
         fun sendMessage(recipient: String, text: String) { socket?.send(JSONObject().put("type","message").put("roomId",roomId).put("recipient",recipient).put("text",text).toString()) }
         /** 위치 공유를 끄고 연결을 닫음. 서버는 연결이 끊기면 위치를 지운다. */
         fun close() {

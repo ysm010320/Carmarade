@@ -16,6 +16,7 @@ export const LIMITS = {
   codeWindowMs: 600_000,
   bodyBytes: 16_384,
   messageLength: 200,
+  maxAudioFramesPerSec: 100, // 통화 음성은 20ms 단위(초당 50개)가 기본, 두 배까지만 받음
   noteLength: 200,          // 모집 글
   departAheadMs: 60 * 86_400_000, // 출발 시간은 60일 안쪽
   feedSize: 30,
@@ -98,6 +99,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
   const live = new Map();       // roomId -> Map<userId, Set<ws>>
   const locations = new Map();  // roomId -> Map<userId, location>
   const codeFailures = new Map(); // userId -> [timestamps]
+  const voice = new Map();      // roomId -> Set<userId>  지금 통화 중인 사람들(메모리에만 둠, 음성은 저장하지 않음)
 
   const isMember = (roomId, userId) => !!q.isMember.get(roomId, userId);
   const memberList = (roomId) => q.members.all(roomId).map(({ id, name, car, role, accepted, phase }) => ({ id, name, car, role, accepted: !!accepted, phase }));
@@ -139,6 +141,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     const r = memberRoom(roomId, userId);
     q.removeMember.run(roomId, userId);
     dropLocation(roomId, userId);
+    dropVoice(roomId, userId);
     unsubscribeUser(roomId, userId);
     const rest = q.members.all(roomId);
     if (rest.length === 0) { closeRoom(roomId); return; }
@@ -148,6 +151,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
   function closeRoom(roomId) {
     q.closeRoom.run(roomId);
     locations.delete(roomId);
+    voice.delete(roomId);
     broadcast(roomId, { type: 'room-closed', roomId });
     live.delete(roomId);
     log(`close room=${roomId}`);
@@ -194,7 +198,65 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     if (!sockets) return;
     sockets.delete(ws);
     // 이 사용자의 연결이 모두 끊기면 위치도 지움(공유가 조용히 계속되지 않게).
-    if (sockets.size === 0) { live.get(roomId).delete(ws.user.id); dropLocation(roomId, ws.user.id); }
+    if (sockets.size === 0) { live.get(roomId).delete(ws.user.id); dropLocation(roomId, ws.user.id); dropVoice(roomId, ws.user.id); }
+  }
+  // ---------- 통화(음성 중계) ----------
+  // 음성은 서버가 받은 즉시 같은 통화 중인 다른 멤버에게만 넘기고, 저장하거나 기록하지 않는다.
+  function voiceMembers(roomId) { return [...(voice.get(roomId) ?? [])]; }
+  function pushVoice(roomId) { broadcast(roomId, { type: 'call-members', roomId, members: voiceMembers(roomId) }); }
+  function joinVoice(roomId, userId) {
+    if (!voice.has(roomId)) voice.set(roomId, new Set());
+    const set = voice.get(roomId);
+    if (set.has(userId)) return;
+    if (set.size >= LIMITS.maxMembers) fail(409, 'call_full', '통화 인원이 가득 찼어요.');
+    set.add(userId); pushVoice(roomId);
+  }
+  function dropVoice(roomId, userId) {
+    const set = voice.get(roomId);
+    if (!set?.delete(userId)) return;
+    if (set.size === 0) voice.delete(roomId);
+    pushVoice(roomId);
+  }
+  function onCall(ws, m) {
+    const roomId = String(m.roomId ?? '');
+    if (!ws.rooms.has(roomId)) fail(403, 'not_subscribed', '먼저 방에 연결해 주세요.');
+    memberRoom(roomId, ws.user.id);
+    const me = ws.user.id;
+    if (m.type === 'call-invite') {
+      const to = m.to === 'all' ? 'all' : String(m.to ?? '');
+      if (to !== 'all' && (to === me || !isMember(roomId, to))) fail(400, 'invalid', '받는 사람이 방 멤버가 아니에요.');
+      joinVoice(roomId, me);
+      const out = { type: 'call-invite', roomId, from: me, to };
+      if (to === 'all') broadcast(roomId, out, { except: me }); else broadcast(roomId, out, { only: to });
+    } else if (m.type === 'call-join') {
+      joinVoice(roomId, me);
+    } else if (m.type === 'call-leave') {
+      dropVoice(roomId, me);
+    } else if (m.type === 'call-decline') {
+      const to = String(m.to ?? '');
+      if (!isMember(roomId, to)) fail(400, 'invalid', '받는 사람이 방 멤버가 아니에요.');
+      broadcast(roomId, { type: 'call-declined', roomId, from: me }, { only: to });
+    }
+  }
+  /** 바이너리 프레임: [0x01][방 ID 길이][방 ID][음성]. 통화 중인 다른 멤버에게 [0x01][보낸 사람 ID 길이][보낸 사람 ID][음성]으로 넘김. */
+  function onAudio(ws, data) {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
+    if (buf.length < 3 || buf[0] !== 0x01) return;
+    const idLen = buf[1];
+    if (buf.length < 2 + idLen + 1) return;
+    const roomId = buf.subarray(2, 2 + idLen).toString('utf8');
+    const me = ws.user.id;
+    if (!ws.rooms.has(roomId) || !voice.get(roomId)?.has(me)) return; // 통화 중이 아니면 버림
+    const t = now();
+    if (t - ws.audioWindow.start >= 1000) { ws.audioWindow.start = t; ws.audioWindow.count = 0; }
+    if (++ws.audioWindow.count > LIMITS.maxAudioFramesPerSec) return; // 너무 잦은 프레임은 버림
+    const payload = buf.subarray(2 + idLen);
+    const from = Buffer.from(me, 'utf8');
+    const out = Buffer.concat([Buffer.from([0x01, from.length]), from, payload]);
+    for (const uid of voice.get(roomId)) {
+      if (uid === me) continue;
+      for (const sock of live.get(roomId)?.get(uid) ?? []) if (sock.readyState === 1) sock.send(out, { binary: true });
+    }
   }
   function onLocation(ws, m) {
     const roomId = String(m.roomId ?? '');
@@ -371,7 +433,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
       if (b.phase !== undefined) {
         if (!['planning', 'driving', 'arrived'].includes(b.phase)) fail(400, 'invalid', '상태가 올바르지 않아요.');
         q.setPhase.run(b.phase, roomId, user.id);
-        if (b.phase === 'arrived') dropLocation(roomId, user.id);
+        if (b.phase === 'arrived') { dropLocation(roomId, user.id); dropVoice(roomId, user.id); }
       }
       pushMembers(roomId);
       return { room: roomView(q.room.get(roomId)) };
@@ -412,8 +474,10 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
     if (!user) { socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
     wss.handleUpgrade(req, socket, head, (ws) => {
       ws.user = user; ws.rooms = new Set(); ws.lastLocation = new Map(); ws.alive = true;
+      ws.audioWindow = { start: 0, count: 0 };
       ws.on('pong', () => { ws.alive = true; });
-      ws.on('message', (data) => {
+      ws.on('message', (data, isBinary) => {
+        if (isBinary) { try { onAudio(ws, data); } catch (e) { log(`audio error: ${e.stack ?? e}`); } return; }
         let m;
         try { m = JSON.parse(String(data)); } catch { return sendWs(ws, { type: 'error', code: 'bad_json', message: 'JSON 형식이 올바르지 않아요.' }); }
         try {
@@ -421,6 +485,7 @@ export function createServer({ dbFile = ':memory:', now = () => Date.now(), log 
           else if (m.type === 'unsubscribe') unsubscribe(ws, String(m.roomId ?? ''));
           else if (m.type === 'location') onLocation(ws, m);
           else if (m.type === 'message') onMessage(ws, m);
+          else if (typeof m.type === 'string' && m.type.startsWith('call-')) onCall(ws, m);
           else fail(400, 'unknown_type', '알 수 없는 요청이에요.');
         } catch (e) {
           if (e instanceof ApiError) sendWs(ws, { type: 'error', code: e.code, message: e.message, roomId: m.roomId });

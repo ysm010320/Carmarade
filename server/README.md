@@ -96,3 +96,17 @@ node tools/fake-member.js --code 5XWG7F --name 지수 --car "IONIQ 5" --minutes 
 - HTTPS 프록시(예: Caddy, Nginx) 뒤에 두고 `HOST=127.0.0.1` 유지. 앱은 https 주소만 허용합니다(개발용 10.0.2.2·localhost만 예외).
 - 계정 복구·기기 변경(지금은 토큰을 잃으면 새 계정), 신고·차단, 방 만료 정리.
 - 서버 여러 대로 늘릴 때는 실시간 상태(구독·위치)를 Redis 같은 공용 저장소로 옮겨야 합니다.
+
+## 통화(음성 중계)
+
+같은 WebSocket(`/v1/live`)으로 통화 신호(JSON)와 음성(바이너리)을 주고받는다. 별도 유료 서비스·TURN 서버가 필요 없다(서버를 직접 운영하는 비용만 든다).
+
+| 방향 | 내용 |
+|---|---|
+| 앱 → 서버 JSON | `call-invite {roomId, to}`(`to`는 멤버 ID 또는 `all`, 보낸 사람은 자동으로 통화에 들어감), `call-join`, `call-leave`, `call-decline {to}` |
+| 서버 → 앱 JSON | `call-invite {from, to}`, `call-members {members}`(지금 통화 중인 멤버 ID), `call-declined {from}` |
+| 앱 → 서버 바이너리 | `[0x01][방 ID 길이][방 ID][음성]` — 통화 중이 아니면 버림, 소켓당 초당 100프레임까지 |
+| 서버 → 앱 바이너리 | `[0x01][보낸 사람 ID 길이][보낸 사람 ID][음성]` — 같은 통화 중인 다른 멤버에게만 |
+
+- 음성은 서버가 해석·저장·기록하지 않고 받은 즉시 넘기기만 한다. 통화 상태도 메모리에만 있고, 연결이 끊기거나 방을 나가거나 도착·방 닫힘이면 통화에서 빠진다.
+- 음성 형식은 16kHz 모노를 20ms(320샘플)씩 µ-law(초당 16KB)로 줄인 것이다(`core/Voice.kt`).

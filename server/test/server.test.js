@@ -37,7 +37,9 @@ function connect(token) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsBase, { headers: { authorization: `Bearer ${token}` } });
     const inbox = []; const waiters = [];
-    ws.on('message', (d) => {
+    ws.audio = [];
+    ws.on('message', (d, isBinary) => {
+      if (isBinary) { ws.audio.push(Buffer.from(d)); return; }
       const m = JSON.parse(String(d)); inbox.push(m);
       for (const w of [...waiters]) if (w.match(m)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(m); }
     });
@@ -278,6 +280,72 @@ test('멤버 상태: 수락·출발·도착이 바로 전해지고, 경로가 �
   const outsider = await signup('status-outsider');
   assert.equal((await api('POST', `/v1/rooms/${room.id}/status`, { token: outsider.token, body: { accepted: true } })).status, 403);
   wa.close(); wb.close();
+});
+
+/** 음성 프레임: [0x01][방 ID 길이][방 ID][음성] */
+const frame = (roomId, payload) => Buffer.concat([Buffer.from([0x01, roomId.length]), Buffer.from(roomId), Buffer.from(payload)]);
+
+test('통화: 초대받은 사람이 들어오면 음성이 통화 중인 다른 사람에게만 전달되고, 저장되지 않음', async () => {
+  const a = await signup('하늘'); const b = await signup('바다'); const c = await signup('구름');
+  const room = await makeRoom(a.token);
+  await api('POST', `/v1/rooms/${room.id}/join`, { token: b.token });
+  await api('POST', `/v1/rooms/${room.id}/join`, { token: c.token });
+  const [wa, wb, wc] = await Promise.all([connect(a.token), connect(b.token), connect(c.token)]);
+  for (const w of [wa, wb, wc]) { w.send2({ type: 'subscribe', roomId: room.id }); await w.next((m) => m.type === 'snapshot'); }
+  wa.send2({ type: 'call-invite', roomId: room.id, to: b.user.id });
+  const inv = await wb.next((m) => m.type === 'call-invite');
+  assert.equal(inv.from, a.user.id);
+  await sleep(100);
+  assert.equal(wc.inbox.some((m) => m.type === 'call-invite'), false, '초대받지 않은 사람에겐 가지 않음');
+  assert.deepEqual((await wa.next((m) => m.type === 'call-members')).members, [a.user.id]);
+  // 아직 b는 통화에 안 들어옴 → 음성은 아무에게도 가지 않음
+  wa.send(frame(room.id, [1, 2, 3]));
+  await sleep(100);
+  assert.equal(wb.audio.length, 0);
+  wb.send2({ type: 'call-join', roomId: room.id });
+  assert.deepEqual((await wa.next((m) => m.type === 'call-members' && m.members.length === 2)).members.sort(), [a.user.id, b.user.id].sort());
+  wa.send(frame(room.id, [9, 8, 7, 6]));
+  await sleep(150);
+  assert.equal(wb.audio.length, 1);
+  assert.equal(wb.audio[0][0], 0x01);
+  const idLen = wb.audio[0][1];
+  assert.equal(wb.audio[0].subarray(2, 2 + idLen).toString(), a.user.id);
+  assert.deepEqual([...wb.audio[0].subarray(2 + idLen)], [9, 8, 7, 6]);
+  assert.equal(wc.audio.length, 0, '통화 중이 아닌 사람에겐 가지 않음');
+  assert.equal(wa.audio.length, 0, '보낸 사람에겐 되돌아오지 않음');
+  // 통화에서 나가면 더 이상 받지 않음
+  wb.send2({ type: 'call-leave', roomId: room.id });
+  await wa.next((m) => m.type === 'call-members' && m.members.length === 1);
+  wa.send(frame(room.id, [5]));
+  await sleep(100);
+  assert.equal(wb.audio.length, 1);
+  for (const w of [wa, wb, wc]) w.close();
+});
+
+test('통화: 거절 알림, 방 밖 사람·잘못된 프레임은 무시, 연결이 끊기면 통화에서 빠짐', async () => {
+  const a = await signup('하늘'); const b = await signup('바다'); const x = await signup('남');
+  const room = await makeRoom(a.token);
+  await api('POST', `/v1/rooms/${room.id}/join`, { token: b.token });
+  const [wa, wb, wx] = await Promise.all([connect(a.token), connect(b.token), connect(x.token)]);
+  for (const w of [wa, wb]) { w.send2({ type: 'subscribe', roomId: room.id }); await w.next((m) => m.type === 'snapshot'); }
+  wa.send2({ type: 'call-invite', roomId: room.id, to: 'all' });
+  await wb.next((m) => m.type === 'call-invite');
+  wb.send2({ type: 'call-decline', roomId: room.id, to: a.user.id });
+  assert.equal((await wa.next((m) => m.type === 'call-declined')).from, b.user.id);
+  // 방 밖 사람은 통화를 시작할 수 없음
+  wx.send2({ type: 'call-join', roomId: room.id });
+  assert.equal((await wx.next((m) => m.type === 'error')).code, 'not_subscribed');
+  wx.send(frame(room.id, [1]));            // 구독하지 않은 방의 음성은 버림
+  wa.send(Buffer.from([0x01]));            // 짧은 프레임은 버림
+  wa.send(Buffer.from([0x02, 1, 2, 3]));   // 모르는 종류는 버림
+  await sleep(100);
+  assert.equal(wb.audio.length, 0);
+  // 통화 중에 연결이 끊기면 통화에서 빠지고 알림
+  wb.send2({ type: 'call-join', roomId: room.id });
+  await wa.next((m) => m.type === 'call-members' && m.members.length === 2);
+  wb.close();
+  assert.deepEqual((await wa.next((m) => m.type === 'call-members' && m.members.length === 1)).members, [a.user.id]);
+  wa.close(); wx.close();
 });
 
 test('토큰 없는 실시간 연결은 거절', async () => {

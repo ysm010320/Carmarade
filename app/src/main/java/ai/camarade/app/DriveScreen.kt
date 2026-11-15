@@ -103,6 +103,10 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         fun quick(text: String, recipient: String)
         fun voiceTo(recipient: String)
         fun call(recipient: String)
+        /** 걸려 온 통화를 받음·거절함·끝냄. */
+        fun acceptCall()
+        fun declineCall()
+        fun endCall()
         fun openPrivacy()
         /** Pleos 내비 지도에서 모임 경로 전체 보기. */
         fun openNaviMap()
@@ -137,6 +141,12 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
     private val random=java.util.Random()
     private var menu: PopupWindow?=null
     private val density=resources.displayMetrics.density
+    // 통화: 통화 중 표시와 끝내기 버튼, 걸려 온 통화의 받기·거절 버튼.
+    private val callChip=ui.chip("",Palette.mapAccent,Color.WHITE)
+    private val endCallButton: ImageView
+    private val endCallGap=View(context)
+    private val incoming=LinearLayout(context)
+    private val incomingName=TextView(context)
 
     init {
         setBackgroundColor(Palette.mapSurface)
@@ -163,8 +173,20 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         side.addView(space());side.addView(icon(R.drawable.ic_pin,"위치공유 설정") { host.openPrivacy() })
         soundButton=icon(R.drawable.ic_voice,"음성 읽어주기") { host.toggleSound() }
         side.addView(space());side.addView(soundButton)
+        endCallButton=icon(R.drawable.ic_call_end,"통화 끝내기",Palette.mapDanger) { host.endCall() }.apply { visibility=View.GONE }
+        endCallGap.layoutParams=ViewGroup.LayoutParams(ui.d(10),ui.d(10));endCallGap.visibility=View.GONE
+        side.addView(endCallGap);side.addView(endCallButton)
         side.addView(space());side.addView(icon(R.drawable.ic_flag,"주행 종료",Palette.mapDanger) { host.finishTrip() })
         addView(side,LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { setMargins(0,ui.d(16),ui.d(16),0) })
+        addView(callChip,LayoutParams(-2,-2,Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin=ui.d(18+46) });callChip.visibility=View.GONE
+        // 걸려 온 통화: 글자 입력 없이 큰 단추 둘(거절·받기)만 둔다. 운전 중에도 한 번에 누를 수 있게 76dp.
+        incoming.orientation=LinearLayout.HORIZONTAL;incoming.gravity=Gravity.CENTER_VERTICAL;incoming.background=mapBox(Palette.mapSurface,28,true)
+        incoming.setPadding(ui.d(26),ui.d(12),ui.d(12),ui.d(12));incoming.visibility=View.GONE;incoming.elevation=ui.d(8).toFloat()
+        incomingName.textSize=20f;incomingName.setTextColor(Palette.mapInk);incomingName.typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+        incoming.addView(incomingName,LinearLayout.LayoutParams(-2,-2).apply { marginEnd=ui.d(22) })
+        incoming.addView(callAnswerButton("통화 거절",Palette.mapDanger,R.drawable.ic_call_end) { host.declineCall() },LinearLayout.LayoutParams(ui.d(76),ui.d(76)).apply { marginEnd=ui.d(12) })
+        incoming.addView(callAnswerButton("통화 받기",Palette.mapAccent,R.drawable.ic_phone) { host.acceptCall() },LinearLayout.LayoutParams(ui.d(76),ui.d(76)))
+        addView(incoming,LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin=ui.d(24) })
         addView(icon(R.drawable.ic_chat,"메시지 기록") { host.showHistory() },LayoutParams(ui.d(60),ui.d(60),Gravity.BOTTOM or Gravity.END).apply { setMargins(0,0,ui.d(16),ui.d(16)) })
         row.orientation=LinearLayout.HORIZONTAL;row.gravity=Gravity.BOTTOM;row.layoutTransition=sliding()
         // 말풍선이 띠용 하고 부풀 때 자기 영역 밖으로 그려지도록 잘라내기를 끔.
@@ -188,6 +210,24 @@ class DriveScreen(context: Context, private val ui: Ui, gateway: VehicleGateway,
         setPadding(ui.d(15),ui.d(15),ui.d(15),ui.d(15));background=mapBox(Palette.mapSurface,16,true)
         contentDescription=label;isClickable=true;isFocusable=true;layoutParams=ViewGroup.LayoutParams(ui.d(60),ui.d(60))
         setOnClickListener { onClick() }
+    }
+
+    private fun callAnswerButton(label: String, color: Int, res: Int, onClick: () -> Unit)=ImageView(context).apply {
+        setImageResource(res);setColorFilter(Color.WHITE);scaleType=ImageView.ScaleType.CENTER_INSIDE
+        setPadding(ui.d(22),ui.d(22),ui.d(22),ui.d(22));background=GradientDrawable().apply { shape=GradientDrawable.OVAL;setColor(color) }
+        contentDescription=label;isClickable=true;isFocusable=true;setOnClickListener { onClick() }
+    }
+    /** 통화 중 표시. [names]가 null이면 통화 중이 아님. */
+    fun showCall(names: List<String>?) {
+        val on=names!=null
+        endCallButton.visibility=if(on) View.VISIBLE else View.GONE;endCallGap.visibility=endCallButton.visibility
+        callChip.visibility=if(on) View.VISIBLE else View.GONE
+        if(names!=null) callChip.text=if(names.isEmpty()) "통화 · 연결하는 중" else "통화 중 · ${names.joinToString(", ")}"
+    }
+    /** 걸려 온 통화 알림. [from]이 null이면 숨김. */
+    fun showIncoming(from: String?) {
+        incoming.visibility=if(from==null) View.GONE else View.VISIBLE
+        if(from!=null) { incomingName.text="${from}님 통화";incoming.bringToFront() }
     }
 
     fun bind(t: Trip, soundOn: Boolean) {
