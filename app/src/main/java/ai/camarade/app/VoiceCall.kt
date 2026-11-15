@@ -40,6 +40,7 @@ class VoiceCall(private val context: Context, private val send: (ByteArray) -> U
     private val sent = AtomicInteger()
     private val received = AtomicInteger()
     @Volatile private var lastMicRms = 0.0
+    @Volatile private var lastPlayRms = 0.0
     private val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
     val active: Boolean get() = started && running
@@ -105,7 +106,7 @@ class VoiceCall(private val context: Context, private val send: (ByteArray) -> U
             }
             send(ulawEncodeFrame(pcm, n));sent.incrementAndGet()
             val now = System.currentTimeMillis()
-            if (now - lastLog > 2000) { lastLog = now;Log.i(TAG, "보낸=${sent.get()} 받은=${received.get()} 마이크RMS=${"%.1f".format(lastMicRms)}${if (usedTone) " (무음→시험 신호음)" else ""}") }
+            if (now - lastLog > 2000) { lastLog = now;Log.i(TAG, "보낸=${sent.get()} 받은=${received.get()} 마이크RMS=${"%.1f".format(lastMicRms)} 받은소리RMS=${"%.1f".format(lastPlayRms)}${if (usedTone) " (무음→시험 신호음)" else ""}") }
         }
     }
 
@@ -119,6 +120,9 @@ class VoiceCall(private val context: Context, private val send: (ByteArray) -> U
                     .setBufferSizeInBytes(maxOf(min, VOICE_FRAME_SAMPLES * 2 * 6)).setTransferMode(AudioTrack.MODE_STREAM).build().also { it.play() }
             }
             val pcm = ulawDecodeFrame(payload)
+            lastPlayRms = rms(pcm)
+            // 차량의 통화 음량 기본값이 작아서(Pleos 에뮬레이터: 45단계 중 20, 약 -25dB) 받은 소리를 키운다. 넘치는 값은 잘라 낸다.
+            for (i in pcm.indices) pcm[i] = (pcm[i] * PLAY_GAIN).toInt().coerceIn(-32768, 32767).toShort()
             track.write(pcm, 0, pcm.size)
         }
     }
@@ -127,5 +131,7 @@ class VoiceCall(private val context: Context, private val send: (ByteArray) -> U
         private const val TAG = "CarmaradeVoice"
         /** 재생 대기 한도(20ms 단위 25개=약 0.5초). 넘으면 지연이 쌓이지 않게 오래된 음성을 버린다. */
         private const val MAX_QUEUED = 25
+        /** 받은 소리를 키우는 배율(약 +9.5dB). */
+        private const val PLAY_GAIN = 3f
     }
 }
