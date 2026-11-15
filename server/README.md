@@ -11,7 +11,7 @@
 cd server
 npm install
 npm start          # http://127.0.0.1:8787
-npm test           # 동작 테스트 14개
+npm test           # 동작 테스트 16개
 ```
 
 환경변수: `PORT`(기본 8787), `HOST`(기본 127.0.0.1), `CARMARADE_DB`(DB 파일 경로).

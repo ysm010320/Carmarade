@@ -17,3 +17,7 @@ carmarade-source.zip
 # server
 server/node_modules/
 server/data/
+
+# 접수양식 작업본(연락처·서명 정보가 들어 있어 저장소에 올리지 않음)
+docs/submission/
+docs/submission-draft.md

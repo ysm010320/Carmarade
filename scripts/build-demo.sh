@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLS="${CAMARADE_ANDROID_TOOLS:-$ROOT/.toolchain}"
-GRADLE_LIB="${CAMARADE_GRADLE_LIB:-/Users/choihanmin/.gradle/wrapper/dists/gradle-8.14-bin/38aieal9i53h9rfe7vjup95b9/gradle-8.14/lib}"
+GRADLE_LIB="${CAMARADE_GRADLE_LIB:-$(ls -d "$HOME"/.gradle/wrapper/dists/gradle-8.14-bin/*/gradle-8.14/lib 2>/dev/null | head -1)}"
 JDK="${CAMARADE_JDK:-/Library/Java/JavaVirtualMachines/jdk-17.0.2.jdk/Contents/Home}"
 OUT="$ROOT/build/manual"
 mkdir -p "$OUT/generated" "$OUT/dex" "$ROOT/apk"

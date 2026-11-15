@@ -19,7 +19,22 @@ android {
     sourceSets["main"].java.srcDirs("src/main/java", "../core")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    buildTypes { release { isMinifyEnabled = false } }
+    // release 서명 키는 저장소에 두지 않고 환경변수로 받는다: CARMARADE_KEYSTORE(경로), CARMARADE_KS_PASS, CARMARADE_KEY_ALIAS(기본 carmarade)
+    val releaseKeystore = System.getenv("CARMARADE_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = System.getenv("CARMARADE_KS_PASS")
+            keyAlias = System.getenv("CARMARADE_KEY_ALIAS") ?: "carmarade"
+            keyPassword = System.getenv("CARMARADE_KS_PASS")
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
+        }
+    }
 }
 dependencies {
     implementation("ai.pleos.playground:NaviHelper:3.0.5")
