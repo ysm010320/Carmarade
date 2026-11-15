@@ -16,7 +16,11 @@
 ## 테스트 환경
 
 - **Pleos Connect 에뮬레이터 v2.1.0** (Android 14 / API 34, Automotive, x86_64), 화면 **2560×1440**, 밀도 160(mdpi), 12.8인치
-- 에뮬레이터를 만드는 방법과 화면 크기 설정은 [`docs/sdk-verification.md`](docs/sdk-verification.md)의 "이 PC에서 빌드·실행하는 방법"에 있습니다. 화면 크기를 2560×1440으로 바꾸지 않으면 하단 바가 겹쳐 보입니다.
+- 에뮬레이터 만들기(요약): Pleos가 제공하는 Pleos Connect v2.1.0 시스템 이미지를 `Sdk/system-images/android-34/pleos_car_emulator/x86_64`에 풀고 AVD를 만듭니다.
+  ```sh
+  avdmanager create avd -n Pleos_Connect_2_1 -k "system-images;android-34;android-automotive;x86_64" -d automotive_1024p_landscape
+  ```
+  RAM 4GB, 호스트 GPU, Cold boot로 설정합니다. **화면 크기는 꼭 2560×1440으로 바꿉니다**: AVD 폴더의 `config.ini`에서 `hw.lcd.width=2560`, `hw.lcd.height=1440`, `hw.lcd.density=160`으로 고친 뒤 다시 켭니다(위 명령의 기본 정의는 1024×768이라 하단 바가 겹쳐 보입니다).
 - 설치한 앱은 에뮬레이터 하단 바 가운데의 **앱 목록(격자 아이콘)** 에서 **카마라드 체험**으로 엽니다. 같은 목록의 "카마라드 SDK 점검"은 개발용 확인 화면입니다.
 - 시작 직후에는 Pleos 내비게이션이 먼저 앞에 뜰 수 있습니다. 그러면 카마라드를 한 번 더 열면 됩니다.
 - 온라인 방을 시험할 때만 Node.js 22.13 이상이 필요합니다.
@@ -96,6 +100,5 @@ release APK는 서명 키가 필요합니다(키는 저장소에 없습니다). 
 | `core/` | 모임·경로·수락·초대 코드·통화 음성 형식 같은 규칙(앱과 테스트가 함께 씀) |
 | `server/` | 방 서버(Node.js). 사용법과 프로토콜은 `server/README.md` |
 | `apk/` | release APK |
-| `docs/` | 확인 결과와 설계 기록: `sdk-verification.md`(Pleos SDK·에뮬레이터), `voice-call.md`(통화), `native-ui.md`(화면 디자인), `feature-audit.md`(기능 점검) |
 | `tests/`, `scripts/` | 핵심 규칙 테스트와 실행 스크립트 |
 | `preview/` | 초기에 만든 브라우저 미리보기(현재 앱과 화면이 다름, 참고용) |
